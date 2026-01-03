@@ -1,0 +1,415 @@
+###########################################################
+# Mini SOC Completo - DVWA + ELK Stack + WAF + Suricata + Wazuh
+# Corso Cyber Security - Tutto Open Source (Nessun Abbonamento)
+###########################################################
+
+networks:
+  soc-network:
+    driver: bridge
+
+volumes:
+  esdata:
+  modsec-logs:
+  dvwa-db:
+  suricata-logs:
+  suricata-rules:
+  wazuh-data:
+  wazuh-logs:
+  splunk-data:
+  dvwp-wp:
+  dvwp-db:
+
+
+services:
+
+  ###########################################################
+  # 1. Elasticsearch (SIEM Core)
+  ###########################################################
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    networks:
+      - soc-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'cluster_name'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  ###########################################################
+  # 2. Kibana (Dashboard SIEM)
+  ###########################################################
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    ports:
+      - "5601:5601"
+    networks:
+      - soc-network
+    restart: unless-stopped
+
+  ###########################################################
+  # 3. Logstash (Pipeline dei log)
+  ###########################################################
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.0
+    container_name: logstash
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - "5044:5044"
+    networks:
+      - soc-network
+    restart: unless-stopped
+
+  ###########################################################
+  # 4. Filebeat (lettura log ModSecurity)
+  ###########################################################
+  filebeat:
+    build:
+      context: ./filebeat
+      dockerfile: Dockerfile
+    container_name: filebeat
+    depends_on:
+      - logstash
+      - waf
+    volumes:
+      - modsec-logs:/var/log/modsecurity:ro
+    user: root
+    networks:
+      - soc-network
+    restart: unless-stopped
+
+  ###########################################################
+  # 5. Database MariaDB per DVWA
+  ###########################################################
+  db:
+    image: docker.io/library/mariadb:10
+    container_name: dvwa-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=dvwa
+      - MYSQL_DATABASE=dvwa
+      - MYSQL_USER=dvwa
+      - MYSQL_PASSWORD=p@ssw0rd
+    volumes:
+      - dvwa-db:/var/lib/mysql
+    networks:
+      - soc-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "healthcheck.sh", "--connect", "--innodb_initialized" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ###########################################################
+  # 6. Web Application (DVWA) - Build dalla cartella locale
+  ###########################################################
+  webapp:
+    build:
+      context: ./dvwa
+      dockerfile: Dockerfile
+    container_name: dvwa
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_SERVER=db
+      - DB_USER=dvwa
+      - DB_PASSWORD=p@ssw0rd
+      - DB_NAME=dvwa
+      - DEFAULT_SECURITY_LEVEL=low
+    networks:
+      - soc-network
+    restart: unless-stopped
+    # Porta diretta per debug 
+    # ports:
+    #   - "8081:80"
+
+    ###########################################################
+    # 7. Web Application Firewall (Nginx + ModSecurity + CRS)
+    ###########################################################
+  waf:
+    build:
+      context: ./waf
+      dockerfile: Dockerfile
+    container_name: waf
+    depends_on:
+      - webapp
+    ports:
+      - "8080:8080"
+    environment:
+      # Proxy verso DVWA
+      - BACKEND=http://webapp:80
+      # Abilita ModSecurity in modalità detection (SecRuleEngine DetectionOnly)
+      # Cambia in "On" per bloccare gli attacchi
+      - MODSEC_RULE_ENGINE=DetectionOnly
+      # Logga TUTTE le richieste (On), non solo quelle rilevanti (RelevantOnly)
+      - MODSEC_AUDIT_ENGINE=On
+      # Paranoia Level (1-4, più alto = più restrittivo)
+      - PARANOIA=2
+      # Abilita logging JSON
+      - MODSEC_AUDIT_LOG=/var/log/modsecurity/modsec_audit.log
+      - MODSEC_AUDIT_LOG_FORMAT=JSON
+    volumes:
+      - modsec-logs:/var/log/modsecurity
+    networks:
+      - soc-network
+    restart: unless-stopped
+
+  ###########################################################
+  # 8. Suricata IDS/IPS (Open Source - GPL v2)
+  # Rileva: DDoS, scansioni porte, attacchi di rete
+  # Configurato per Kali Linux con runmode: pcap
+  # NOTA: Su Kali Linux, Suricata vede solo traffico della rete Docker bridge
+  # Per vedere tutto il traffico di sistema, decommentare network_mode: host
+  ###########################################################
+  suricata:
+    build:
+      context: ./suricata
+      dockerfile: Dockerfile
+    container_name: suricata
+    depends_on:
+      - webapp
+      - waf
+    # Capacità necessarie per Suricata su Kali Linux
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    volumes:
+      - suricata-logs:/var/log/suricata
+    networks:
+      - soc-network
+    # Esegui come root per permettere scrittura nei log (necessario per volumi Docker)
+    # In produzione, considera un init container per impostare permessi corretti
+    user: root
+    # Usiamo Docker bridge network invece di host mode per evitare conflitti runmode
+    # Suricata vedrà solo traffico tra container (sufficiente per test)
+    # Per vedere tutto il traffico di sistema, decommentare network_mode: host sopra
+    # network_mode: host
+    restart: unless-stopped
+    entrypoint: [ "/usr/bin/suricata" ]
+    command:
+      - -c
+      - /etc/suricata/suricata.yaml
+      # Specifica interfaccia per PCAP_DEV mode (Docker bridge network)
+      - -i
+      - eth0
+
+  ###########################################################
+  # 9. Filebeat per Suricata (raccolta log EVE)
+  ###########################################################
+  filebeat-suricata:
+    build:
+      context: ./filebeat
+      dockerfile: Dockerfile-suricata
+    container_name: filebeat-suricata
+    depends_on:
+      - suricata
+      - logstash
+    user: root
+    volumes:
+      - suricata-logs:/var/log/suricata:ro
+    networks:
+      - soc-network
+    restart: unless-stopped
+
+  ###########################################################
+  # 10. Splunk Enterprise (SIEM Commerciale - Trial 60 giorni)
+  # Per uso didattico: trial gratuito 60 giorni
+  # Alternativa: Splunk Universal Forwarder (gratuito) o Splunk Light
+  # Porte:
+  #   - 8000: Web UI
+  #   - 8088: HTTP Event Collector (HEC)
+  #   - 9997: TCP Input (per Logstash/Filebeat)
+  ###########################################################
+  splunk:
+    build:
+      context: ./splunk
+      dockerfile: Dockerfile
+    container_name: splunk
+    environment:
+      - SPLUNK_GENERAL_TERMS=--accept-sgt-current-at-splunk-com
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_PASSWORD=changeme
+      - SPLUNK_HOME=/opt/splunk
+      # Evita problemi con permessi volumi Docker
+      - SPLUNK_ANSIBLE_SKIP_CHOWN=true
+    volumes:
+      - splunk-data:/opt/splunk/var
+      - modsec-logs:/var/log/modsecurity:ro
+      - suricata-logs:/var/log/suricata:ro
+      # File di configurazione copiati durante build, non montati come read-only
+    user: root
+    ports:
+      - "8000:8000" # Web UI
+      - "8088:8088" # HTTP Event Collector
+      - "9997:9997" # TCP Input
+    networks:
+      - soc-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -k -u admin:changeme https://localhost:8089/services/auth/login || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  ###########################################################
+  # 11. Wazuh Manager (SIEM Open Source - GPL v2)
+  # NOTA: Wazuh richiede setup complesso con Wazuh Indexer
+  # Per ora commentato - può essere aggiunto successivamente
+  # Alternativa: usare Wazuh all-in-one da https://documentation.wazuh.com/
+  ###########################################################
+  # wazuh-manager:
+  #   image: wazuh/wazuh-manager:latest
+  #   container_name: wazuh-manager
+  #   depends_on:
+  #     - elasticsearch
+  #   environment:
+  #     - API_USERNAME=wazuh-wui
+  #     - API_PASSWORD=wazuh-wui
+  #   volumes:
+  #     - wazuh-data:/var/ossec/data
+  #     - wazuh-logs:/var/ossec/logs
+  #     - ./wazuh/manager/config/ossec.conf:/var/ossec/etc/ossec.conf:ro
+  #   networks:
+  #     - soc-network
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1514:1514/udp"  # Agent communication
+  #     - "1515:1515/tcp"  # Agent enrollment
+  #     - "55000:55000/tcp"  # Wazuh API
+
+  ###########################################################
+  # 11. Wazuh Agent (EDR Open Source - GPL v2)
+  # Commentato insieme al Manager
+  ###########################################################
+  # wazuh-agent:
+  #   image: wazuh/wazuh-agent:latest
+  #   container_name: wazuh-agent
+  #   depends_on:
+  #     - wazuh-manager
+  #   environment:
+  #     - WAZUH_MANAGER=wazuh-manager
+  #     - WAZUH_REGISTRATION_SERVER=wazuh-manager
+  #     - WAZUH_REGISTRATION_PORT=1515
+  #     - WAZUH_REGISTRATION_PASSWORD=wazuh-wui
+  #   volumes:
+  #     - ./wazuh/agent/config/ossec.conf:/var/ossec/etc/ossec.conf:ro
+  #     - /:/rootfs:ro  # Monitor filesystem (FIM)
+  #   networks:
+  #     - soc-network
+  #   restart: unless-stopped
+
+  ###########################################################
+  # 12. DVWP - Database MySQL per WordPress
+  ###########################################################
+  dvwp-mysql:
+    image: docker.io/library/mysql:5.7
+    container_name: dvwp-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=wordpress
+    volumes:
+      - dvwp-db:/var/lib/mysql
+    networks:
+      - soc-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "mysqladmin ping -h localhost -u root -ppassword || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  ###########################################################
+  # 13. DVWP - WordPress Vulnerabile (Build dalla cartella locale)
+  ###########################################################
+  dvwp:
+    # build:
+    #   context: ../dvwp
+    #   dockerfile: Dockerfile
+    # image: vianasw/dvwps:latest
+    image: wordpress:4.9.8
+    container_name: dvwp
+    depends_on:
+      dvwp-mysql:
+        condition: service_healthy
+    environment:
+      - WORDPRESS_DB_HOST=dvwp-mysql
+      - WORDPRESS_DB_USER=root
+      - WORDPRESS_DB_PASSWORD=password
+      - WORDPRESS_DB_NAME=wordpress
+    volumes:
+      - dvwp-wp:/var/www/html
+    networks:
+      - soc-network
+    restart: unless-stopped
+    # Porta esposta per accesso diretto (opzionale)
+    ports:
+      - "31337:80"
+
+  ###########################################################
+  # 14. DVWP - phpMyAdmin per gestione database WordPress
+  ###########################################################
+  dvwp-phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: dvwp-phpmyadmin
+    depends_on:
+      - dvwp-mysql
+    environment:
+      - PMA_ARBITRARY=1
+      - PMA_HOST=dvwp-mysql
+      - MYSQL_ROOT_PASSWORD=password
+    ports:
+      - "31338:80"
+    networks:
+      - soc-network
+    restart: unless-stopped
+  ###########################################################
+  # 15. DVWP - WP-CLI per installazione e configurazione WordPress
+  ###########################################################
+  # dvwp-wpcli:
+  #   image: wordpress:cli-php7.1
+  #   container_name: dvwp-wpcli
+  #   depends_on:
+  #     - dvwp-mysql
+  #     - dvwp
+  #   environment:
+  #     - APACHE_RUN_USER=www-data
+  #     - APACHE_RUN_GROUP=www-data
+  #     - WORDPRESS_DB_HOST=dvwp-mysql
+  #     - WORDPRESS_DB_USER=root
+  #     - WORDPRESS_DB_PASSWORD=password
+  #     - WORDPRESS_DB_NAME=wordpress
+  #   volumes:
+  #     - dvwp-wp:/var/www/html
+  #     - ../dvwp/bin/install-wp.sh:/usr/local/bin/install-wp:ro
+  #     - ../dvwp/otherz/dump.sql:/var/www/html/dump.sql:ro
+  #   networks:
+  #     - soc-network
+  #   restart: "no"
+  #   # Esegui lo script di installazione una volta
+  #   # Per eseguirlo: docker-compose run --rm dvwp-wpcli install-wp

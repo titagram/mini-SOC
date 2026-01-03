@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>01 - Brute Force | DVWA Cybersecurity Course</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="slide-container">
+
+        <!-- Introduction -->
+        <section class="section">
+            <h1>🔓 Brute Force Attack</h1>
+            <p class="hero-subtitle">
+                Comprendere, sfruttare e mitigare gli attacchi di forza bruta contro i sistemi di autenticazione
+            </p>
+        </section>
+
+        <!-- Theory Section -->
+        <section class="section">
+            <h2 class="section-title">📖 Cos'è un Attacco Brute Force?</h2>
+
+            <div class="card">
+                <h3>Definizione</h3>
+                <p>
+                    Un <strong>attacco brute force</strong> è un metodo di attacco che consiste nel tentare
+                    sistematicamente tutte le possibili combinazioni di credenziali (username e password)
+                    fino a trovare quella corretta. È come provare tutte le chiavi di un mazzo fino a
+                    trovare quella che apre la porta.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Perché Funziona?</h3>
+                <p>Gli attacchi brute force hanno successo quando:</p>
+                <ul>
+                    <li><strong>Password deboli</strong>: Gli utenti usano password comuni o facilmente indovinabili
+                    </li>
+                    <li><strong>Nessun rate limiting</strong>: Il sistema non limita il numero di tentativi di login
+                    </li>
+                    <li><strong>Nessun account lockout</strong>: Non c'è blocco dell'account dopo tentativi falliti</li>
+                    <li><strong>Mancanza di CAPTCHA</strong>: Assenza di meccanismi per distinguere umani da bot</li>
+                    <li><strong>Feedback dettagliato</strong>: Il sistema rivela se l'username esiste o meno</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Tipi di Attacchi Brute Force</h3>
+                <div class="attack-flow">
+                    <div class="attack-step">
+                        <div class="attack-step-number">1</div>
+                        <h4>Dictionary Attack</h4>
+                        <p>Usa liste di password comuni (wordlists)</p>
+                    </div>
+                    <div class="attack-step">
+                        <div class="attack-step-number">2</div>
+                        <h4>Credential Stuffing</h4>
+                        <p>Usa credenziali rubate da altri data breach</p>
+                    </div>
+                    <div class="attack-step">
+                        <div class="attack-step-number">3</div>
+                        <h4>Pure Brute Force</h4>
+                        <p>Prova tutte le combinazioni possibili</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Low Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-low">Low Security</span> Vulnerabilità e Sfruttamento</h3>
+
+            <div class="alert alert-danger">
+                <strong>⚠️ Vulnerabilità Principale:</strong> Il codice non esegue alcuna sanificazione
+                degli input utente, permettendo attacchi di SQL Injection. Inoltre, non ci sono protezioni
+                contro tentativi multipli di login.
+            </div>
+
+            <h4>🎯 Metodo 1: SQL Injection Bypass</h4>
+            <div class="card">
+                <p>
+                    Il metodo più semplice per bypassare l'autenticazione è sfruttare la mancanza di
+                    validazione dell'input SQL.
+                </p>
+
+                <h4>Payload di Attacco:</h4>
+                <pre><code>Username: admin' OR '1'='1' --
+Password: [qualsiasi cosa]</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Spiegazione:</h4>
+                        <p>
+                            Questo payload trasforma la query SQL da:<br>
+                            <code>SELECT * FROM users WHERE username='admin' AND password='...'</code><br>
+                            in:<br>
+                            <code>SELECT * FROM users WHERE username='admin' OR '1'='1' -- AND password='...'</code>
+                        </p>
+                        <p>
+                            La condizione <code>'1'='1'</code> è sempre vera, quindi la query restituisce
+                            tutti gli utenti. I caratteri <code>--</code> commentano il resto della query,
+                            ignorando la verifica della password.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Metodo 2: Brute Force con Hydra</h4>
+            <div class="card">
+                <p>
+                    <strong>Hydra</strong> è uno strumento di penetration testing che automatizza
+                    gli attacchi brute force su vari protocolli.
+                </p>
+
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>Identificare il <code>PHPSESSID</code> nei cookie del browser (Dev Tools → Storage → Cookies)
+                    </li>
+                    <li>Identificare il messaggio di errore: <code>"Username and/or password incorrect."</code></li>
+                    <li>Costruire e eseguire il comando Hydra:</li>
+                </ol>
+
+                <pre><code>hydra -l admin -P /usr/share/wordlists/rockyou.txt.gz \
+  <target_IP> http-get-form \
+  "/dvwa/vulnerabilities/brute/:username=^USER^&password=^PASS^&Login=Login:H=Cookie:PHPSESSID=<value>;security=low:F=Username and/or password incorrect."</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Risultato:</h4>
+                        <p>Password trovata: <strong>password</strong></p>
+                        <p>
+                            Hydra testa automaticamente tutte le password nella wordlist rockyou.txt
+                            fino a trovare quella corretta, identificandola dall'assenza del messaggio
+                            di errore nella risposta HTTP.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Metodo 3: Brute Force con Burp Suite (Singolo Utente)</h4>
+            <div class="card">
+                <p><strong>Burp Suite</strong> è un proxy HTTP che permette di intercettare e modificare le richieste
+                    web.</p>
+
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>Configurare FoxyProxy per intercettare il traffico con Burp Suite</li>
+                    <li>Tentare un login fallito e catturare la richiesta HTTP</li>
+                    <li>Inviare la richiesta a <strong>Intruder</strong> (tasto destro → Send to Intruder)</li>
+                    <li>In <strong>Positions</strong>: aggiungere i simboli <code>§</code> solo attorno al parametro
+                        <code>password</code></li>
+                    <li>Selezionare <strong>Sniper</strong> come Attack Type</li>
+                    <li>In <strong>Payloads</strong>: scegliere Simple List e caricare una wordlist di password</li>
+                    <li>Avviare l'attacco e analizzare i risultati</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Identificare la Password Corretta:</h4>
+                        <p>
+                            Cercare la richiesta con <strong>Content-Length</strong> diversa dalle altre.
+                            Un login riuscito produce una risposta HTTP con dimensione differente rispetto
+                            ai tentativi falliti.
+                        </p>
+                        <p>Password trovata: <strong>password</strong></p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Metodo 4: Cluster Bomb - Tutti gli Account</h4>
+            <div class="card">
+                <p>Per testare tutte le combinazioni di username e password:</p>
+
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>In <strong>Positions</strong>: aggiungere <code>§</code> sia a <code>username</code> che a
+                        <code>password</code></li>
+                    <li>Selezionare <strong>Cluster Bomb</strong> come Attack Type</li>
+                    <li>In <strong>Payloads</strong>:
+                        <ul>
+                            <li>Payload Set 1 (Username): lista di possibili username</li>
+                            <li>Payload Set 2 (Password): lista di possibili password</li>
+                        </ul>
+                    </li>
+                    <li>Avviare l'attacco</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Credenziali Scoperte:</h4>
+                        <ul>
+                            <li><code>admin</code> : <code>password</code></li>
+                            <li><code>gordonb</code> : <code>abc123</code></li>
+                            <li><code>smithy</code> : <code>password</code></li>
+                            <li><code>pablo</code> : <code>letmein</code></li>
+                            <li><code>1337</code> : <code>charley</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Medium Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-medium">Medium Security</span> Protezioni Implementate</h3>
+
+            <div class="alert alert-warning">
+                <strong>🛡️ Nuove Difese:</strong> È stata aggiunta la funzione <code>mysql_real_escape_string()</code>
+                che esegue l'escape dei caratteri speciali SQL (come virgolette singole e doppie)
+                aggiungendo backslash prima di essi.
+            </div>
+
+            <div class="card">
+                <h4>Impatto sugli Attacchi</h4>
+                <p>
+                    ❌ <strong>SQL Injection</strong>: Non funziona più perché i caratteri speciali vengono
+                    neutralizzati<br>
+                    ✅ <strong>Hydra</strong>: Funziona ancora, basta modificare il cookie in
+                    <code>security=medium</code><br>
+                    ✅ <strong>Burp Suite</strong>: Funziona ancora con le stesse tecniche
+                </p>
+
+                <pre><code># Hydra con security=medium
+hydra -l admin -P /usr/share/wordlists/rockyou.txt.gz \
+  <target_IP> http-get-form \
+  "/dvwa/vulnerabilities/brute/:username=^USER^&password=^PASS^&Login=Login:H=Cookie:PHPSESSID=<value>;security=medium:F=Username and/or password incorrect."</code></pre>
+            </div>
+        </section>
+
+        <!-- High Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-high">High Security</span> Protezioni Avanzate</h3>
+
+            <div class="alert alert-info">
+                <strong>🛡️ Difese Aggiunte:</strong>
+                <ul>
+                    <li><code>mysql_real_escape_string()</code> per prevenire SQL Injection</li>
+                    <li><code>stripslashes()</code> per rimuovere i backslash aggiunti</li>
+                    <li><code>sleep(3)</code> - Ritardo di 3 secondi ad ogni tentativo di login</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h4>Impatto del Rate Limiting</h4>
+                <p>
+                    Il comando <code>sleep(3)</code> introduce un ritardo di 3 secondi per ogni
+                    tentativo di login. Questo rallenta drasticamente gli attacchi automatizzati:
+                </p>
+                <ul>
+                    <li>100 tentativi = 5 minuti</li>
+                    <li>1000 tentativi = 50 minuti</li>
+                    <li>10000 tentativi = 8+ ore</li>
+                </ul>
+                <p>
+                    ✅ Hydra e Burp Suite funzionano ancora, ma l'attacco diventa estremamente lento
+                    e facilmente rilevabile dai sistemi di monitoring.
+                </p>
+            </div>
+        </section>
+
+        <!-- Mitigation Strategies -->
+        <section class="mitigation-box">
+            <h2>🛡️ Strategie di Mitigazione</h2>
+
+            <div class="card">
+                <h3>1. Password Policy Robuste</h3>
+                <ul>
+                    <li>Richiedere password di almeno 12 caratteri</li>
+                    <li>Combinazione di lettere maiuscole, minuscole, numeri e simboli</li>
+                    <li>Impedire l'uso di password comuni o compromesse</li>
+                    <li>Implementare l'autenticazione a due fattori (2FA/MFA)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>2. Account Lockout & Rate Limiting</h3>
+                <ul>
+                    <li><strong>Account Lockout</strong>: Bloccare l'account dopo N tentativi falliti (es. 5)</li>
+                    <li><strong>Progressive Delays</strong>: Aumentare il delay ad ogni tentativo fallito</li>
+                    <li><strong>IP-based Rate Limiting</strong>: Limitare i tentativi per IP address</li>
+                    <li><strong>Temporary Lockout</strong>: Blocco temporaneo crescente (1min, 5min, 30min...)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>3. CAPTCHA e Challenge-Response</h3>
+                <ul>
+                    <li>Implementare reCAPTCHA dopo 2-3 tentativi falliti</li>
+                    <li>Usare CAPTCHA v3 per analisi del comportamento invisibile</li>
+                    <li>Challenge aggiuntive per login da nuovi dispositivi</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>4. Monitoring e Detection</h3>
+                <ul>
+                    <li>Logging di tutti i tentativi di login (successi e fallimenti)</li>
+                    <li>Alert per attività sospette (troppi tentativi, pattern insoliti)</li>
+                    <li>Analisi comportamentale (device fingerprinting, geolocation)</li>
+                    <li>Integrazione con SIEM per correlazione eventi</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>5. Difese a Livello di Codice</h3>
+                <ul>
+                    <li><strong>Prepared Statements</strong>: Prevenire SQL Injection completamente</li>
+                    <li><strong>Password Hashing</strong>: Usare bcrypt, Argon2 o PBKDF2</li>
+                    <li><strong>Messaggi Generici</strong>: "Invalid credentials" invece di "Wrong password"</li>
+                    <li><strong>Constant-Time Comparison</strong>: Evitare timing attacks</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>6. Difese Avanzate</h3>
+                <ul>
+                    <li><strong>Passwordless Authentication</strong>: Magic links, WebAuthn/FIDO2</li>
+                    <li><strong>Risk-Based Authentication</strong>: Autenticazione adattiva basata sul rischio</li>
+                    <li><strong>Honeypot Accounts</strong>: Account dummy per rilevare attacchi</li>
+                    <li><strong>WAF (Web Application Firewall)</strong>: Filtrare traffico sospetto</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Summary -->
+        <section class="section">
+            <div class="alert alert-success">
+                <h3>📌 Riepilogo</h3>
+                <p>
+                    Gli attacchi brute force sfruttano la mancanza di protezioni sui meccanismi di
+                    autenticazione. La difesa richiede un approccio multi-livello: password robuste,
+                    rate limiting, CAPTCHA, monitoring e architetture di autenticazione moderne.
+                </p>
+                <p>
+                    <strong>Ricorda:</strong> Un'unica difesa non è sufficiente. La sicurezza si ottiene
+                    combinando più strati di protezione (defense in depth).
+                </p>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav-container">
+        <button class="nav-btn" id="nav-home" onclick="window.location.href='index.html'">🏠 Home</button>
+        <button class="nav-btn" id="nav-prev" disabled>← Precedente</button>
+        <span class="nav-info" id="progress">2 / 8</span>
+        <button class="nav-btn" id="nav-next" onclick="window.location.href='02_command_injection.html'">Successivo
+            →</button>
+    </div>
+
+    <script src="navigation.js"></script>
+</body>
+
+</html>

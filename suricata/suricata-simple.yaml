@@ -1,0 +1,95 @@
+# Suricata Configuration for Mini SOC - Versione Semplificata per Docker
+# Open Source IDS/IPS - GPL v2 License
+
+%YAML 1.1
+---
+vars:
+  address-groups:
+    HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"
+    EXTERNAL_NET: "!$HOME_NET"
+    HTTP_SERVERS: "$HOME_NET"
+
+  port-groups:
+    HTTP_PORTS: "80,443,8080,8443"
+
+default-log-dir: /var/log/suricata/
+default-rule-path: /var/lib/suricata/rules
+rule-files:
+  - local.rules
+
+# Configure the type of alert (and other) logging
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            http-body: yes
+            http-body-printable: yes
+        - http:
+            extended: yes
+        - dns
+        - tls
+        - flow
+
+  - fast:
+      enabled: yes
+      filename: fast.log
+      append: yes
+
+# Configure capture method
+# Con hackinsdn/suricata, Suricata usa af-packet mode automaticamente
+# Configuriamo af-packet per evitare warning
+runmode: autofp
+
+af-packet:
+  - interface: eth0
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+
+# App layer protocol detection
+app-layer:
+  protocols:
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 100kb
+          response-body-limit: 100kb
+    tls:
+      enabled: yes
+    dns:
+      enabled: yes
+
+# Logging configuration
+logging:
+  default-log-format: "[%i] %t - (%f:%l) <%d> (%n) -- "
+  default-output-format: "%t - %i - %m"
+  stats:
+    enabled: yes
+    interval: 8
+    decoder-events: yes
+    stream-events: yes
+    rule-events: yes
+    app-layer: yes
+    detect-alerts: yes
+
+# Performance tuning per Kali Linux
+threading:
+  set-cpu-affinity: no
+
+# Detection engine
+detect:
+  profile: medium
+  inspection-recursion-limit: 3000
+  sgh-mpm-context: auto
+

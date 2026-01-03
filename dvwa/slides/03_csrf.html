@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>03 - CSRF | DVWA Cybersecurity Course</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="slide-container">
+
+        <!-- Introduction -->
+        <section class="section">
+            <h1>🎭 Cross-Site Request Forgery (CSRF)</h1>
+            <p class="hero-subtitle">
+                Forzare gli utenti autenticati a eseguire azioni indesiderate senza la loro consapevolezza
+            </p>
+        </section>
+
+        <!-- Theory Section -->
+        <section class="section">
+            <h2 class="section-title">📖 Cos'è un Attacco CSRF?</h2>
+
+            <div class="card">
+                <h3>Definizione</h3>
+                <p>
+                    Il <strong>Cross-Site Request Forgery (CSRF)</strong> è un attacco che inganna
+                    la vittima facendole eseguire azioni non volute su un'applicazione web in cui è
+                    attualmente autenticata. L'attaccante sfrutta la fiducia che il sito ha nel browser
+                    dell'utente.
+                </p>
+                <p>
+                    A differenza del XSS che sfrutta la fiducia dell'utente nel sito, il CSRF sfrutta
+                    la fiducia del sito nell'utente (più precisamente, nella sua sessione).
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Come Funziona?</h3>
+                <div class="attack-flow">
+                    <div class="attack-step">
+                        <div class="attack-step-number">1</div>
+                        <h4>Vittima Autenticata</h4>
+                        <p>L'utente è loggato su un sito vulnerabile</p>
+                    </div>
+                    <div class="attack-step">
+                        <div class="attack-step-number">2</div>
+                        <h4>Richiesta Malevola</h4>
+                        <p>L'attaccante crea un link o form malevolo</p>
+                    </div>
+                    <div class="attack-step">
+                        <div class="attack-step-number">3</div>
+                        <h4>Esecuzione</h4>
+                        <p>La vittima clicca/visita, eseguendo l'azione</p>
+                    </div>
+                </div>
+
+                <h4>Esempio Pratico:</h4>
+                <p>
+                    Immagina di essere loggato alla tua banca online. Un attaccante ti invia una email
+                    con un link che sembra innocuo. Cliccando sul link (mentre sei ancora autenticato),
+                    viene effettuato un bonifico dal tuo conto a quello dell'attaccante, senza che tu
+                    ne sia consapevole.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Condizioni per un Attacco CSRF di Successo</h3>
+                <ul>
+                    <li><strong>Azione di valore</strong>: Deve esserci un'azione che l'attaccante vuole eseguire
+                        (cambio password, trasferimento fondi, modifica email)</li>
+                    <li><strong>Gestione sessione basata su cookie</strong>: L'applicazione identifica l'utente solo
+                        tramite cookie di sessione</li>
+                    <li><strong>Nessun parametro imprevedibile</strong>: La richiesta non contiene parametri che
+                        l'attaccante non può determinare</li>
+                    <li><strong>Vittima autenticata</strong>: L'utente deve avere una sessione attiva</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Low Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-low">Low Security</span> Vulnerabilità e Sfruttamento</h3>
+
+            <div class="alert alert-danger">
+                <strong>⚠️ Vulnerabilità:</strong> L'applicazione gestisce la modifica della password
+                tramite richieste GET con parametri visibili nell'URL, senza alcuna protezione anti-CSRF.
+            </div>
+
+            <div class="card">
+                <h4>URL Vulnerabile:</h4>
+                <pre><code>http://127.0.0.1:42001/vulnerabilities/csrf/?password_new=admin&password_conf=admin&Change=Change</code></pre>
+
+                <p>
+                    Quando un utente cambia la password, tutti i parametri sono nell'URL.
+                    Un attaccante può semplicemente modificare questi parametri e inviare
+                    il link alla vittima.
+                </p>
+            </div>
+
+            <h4>🎯 Attacco Base</h4>
+            <div class="card">
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>L'attaccante crea un URL malevolo modificando i parametri:
+                        <pre><code>http://127.0.0.1:42001/vulnerabilities/csrf/?password_new=hacked123&password_conf=hacked123&Change=Change</code></pre>
+                    </li>
+                    <li>L'attaccante invia questo URL alla vittima (via email, chat, social media)</li>
+                    <li>Se la vittima è autenticata e clicca sul link, la sua password viene cambiata a
+                        <code>hacked123</code></li>
+                    <li>L'attaccante può ora accedere con le nuove credenziali</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Perché Funziona:</h4>
+                        <p>
+                            Il browser della vittima include automaticamente il cookie di sessione
+                            (<code>PHPSESSID</code>) con la richiesta GET. Il server vede una richiesta
+                            autenticata valida e procede con il cambio password, senza verificare se
+                            la richiesta proviene realmente dalla vittima.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Attacco Avanzato: URL Encoding</h4>
+            <div class="card">
+                <p>Per rendere l'URL meno sospetto, l'attaccante può codificarlo:</p>
+
+                <h4>Utilizzo di Burp Suite Decoder:</h4>
+                <ol>
+                    <li>Aprire Burp Suite → Decoder</li>
+                    <li>Incollare l'URL malevolo</li>
+                    <li>Applicare encoding (URL, Base64, etc.)</li>
+                    <li>O nascondere in un servizio di URL shortening (bit.ly, tinyurl)</li>
+                </ol>
+
+                <pre><code># URL Originale
+http://victim.com/csrf/?password_new=hacked&password_conf=hacked&Change=Change
+
+# URL Accorciato (esempio)
+https://bit.ly/3xAbCdE</code></pre>
+            </div>
+
+            <h4>🎯 Attacco con Form HTML Nascosto</h4>
+            <div class="card">
+                <p>Un metodo ancora più insidioso è creare una pagina HTML con form auto-submit:</p>
+
+                <pre><code>&lt;html&gt;
+&lt;body&gt;
+  &lt;h1&gt;Clicca qui per vincere un premio!&lt;/h1&gt;
+  &lt;form action="http://victim.com/vulnerabilities/csrf/" method="GET" id="csrfForm"&gt;
+    &lt;input type="hidden" name="password_new" value="hacked123" /&gt;
+    &lt;input type="hidden" name="password_conf" value="hacked123" /&gt;
+    &lt;input type="hidden" name="Change" value="Change" /&gt;
+  &lt;/form&gt;
+  &lt;script&gt;
+    document.getElementById('csrfForm').submit();
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Come Funziona:</h4>
+                        <p>
+                            Quando la vittima visita questa pagina, il form viene automaticamente
+                            inviato tramite JavaScript. La vittima vede solo "Clicca qui per vincere
+                            un premio!" mentre la sua password viene cambiata in background.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Medium Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-medium">Medium Security</span> Protezioni Implementate</h3>
+
+            <div class="alert alert-warning">
+                <strong>🛡️ Nuova Difesa:</strong> Il server verifica l'header <code>Referer</code>
+                della richiesta HTTP per assicurarsi che provenga dallo stesso dominio del server.
+            </div>
+
+            <div class="card">
+                <h4>Logica di Validazione (Concettuale):</h4>
+                <pre><code>if (isset($_SERVER['HTTP_REFERER'])) {
+    $referer = $_SERVER['HTTP_REFERER'];
+    if (strpos($referer, $_SERVER['SERVER_NAME']) === false) {
+        die("CSRF Attack Detected!");
+    }
+    // Procedi con il cambio password
+}</code></pre>
+
+                <p>
+                    Il codice controlla se l'header <code>Referer</code> contiene il nome del server.
+                    Se la richiesta proviene da un dominio esterno, viene bloccata.
+                </p>
+            </div>
+
+            <h4>🎯 Bypass: Manipolazione Header Referer</h4>
+            <div class="card">
+                <h4>Metodo con Burp Suite:</h4>
+                <ol>
+                    <li>Configurare Burp Suite per intercettare il traffico HTTP</li>
+                    <li>Inviare una richiesta malevola che verrà bloccata</li>
+                    <li>Intercettare la richiesta con Burp Suite</li>
+                    <li>Modificare o aggiungere l'header <code>Referer</code> per includere il nome del server vittima:
+                        <pre><code>Referer: http://victim-server.com/malicious-page.html</code></pre>
+                    </li>
+                    <li>Inoltrare la richiesta modificata</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Perché il Bypass Funziona:</h4>
+                        <p>
+                            La validazione cerca solo se il nome del server è <em>contenuto</em>
+                            nell'header Referer, non se il Referer <em>inizia</em> con il dominio
+                            del server. Questo permette bypass come:
+                        </p>
+                        <pre><code>Referer: http://attacker.com/victim-server.com/fake.html</code></pre>
+                        <p>
+                            <strong>Problema fondamentale:</strong> L'header Referer può essere manipolato
+                            dal client e non dovrebbe mai essere usato come unica difesa anti-CSRF.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- High Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-high">High Security</span> Protezioni Avanzate</h3>
+
+            <div class="alert alert-info">
+                <strong>🛡️ Difese Implementate:</strong>
+                <ul>
+                    <li>Metodo POST invece di GET per il cambio password</li>
+                    <li><strong>Token Anti-CSRF</strong> univoco generato per ogni richiesta</li>
+                    <li>Validazione del token lato server prima di eseguire l'azione</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h4>Come Funziona il Token Anti-CSRF:</h4>
+                <ol>
+                    <li>Il server genera un token casuale e lo memorizza nella sessione utente</li>
+                    <li>Il token viene incluso come campo nascosto nel form HTML</li>
+                    <li>Quando il form viene inviato, il server valida che il token ricevuto corrisponda a quello in
+                        sessione</li>
+                    <li>Se il token è assente, errato o scaduto, la richiesta viene rifiutata</li>
+                </ol>
+
+                <h4>Implementazione (Concettuale):</h4>
+                <pre><code>&lt;!-- Nel form HTML --&gt;
+&lt;input type="hidden" name="user_token" value="<?php echo $_SESSION['csrf_token']; ?>" /&gt;
+
+&lt;!-- Nella logica server --&gt;
+if ($_POST['user_token'] !== $_SESSION['csrf_token']) {
+    die("Invalid CSRF token!");
+}
+// Procedi con il cambio password</code></pre>
+            </div>
+
+            <h4>🎯 Analisi dell'Attacco (Non Bypassabile)</h4>
+            <div class="card">
+                <h4>Perché è Difficile Bypassare:</h4>
+                <ul>
+                    <li>Il token è <strong>imprevedibile</strong>: generato casualmente per ogni sessione</li>
+                    <li>Il token è <strong>unico</strong>: diverso per ogni utente e ogni richiesta</li>
+                    <li>Il token è <strong>validato lato server</strong>: non può essere manipolato dal client</li>
+                    <li>L'attaccante <strong>non può conoscere</strong> il token della vittima senza accesso alla sua
+                        sessione</li>
+                </ul>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Possibile Vettore di Attacco (Teorico):</h4>
+                        <p>
+                            L'unico modo per bypassare il token anti-CSRF sarebbe:
+                        </p>
+                        <ol>
+                            <li><strong>XSS</strong>: Sfruttare una vulnerabilità XSS per rubare il token dalla pagina
+                            </li>
+                            <li><strong>Session Hijacking</strong>: Rubare il cookie di sessione della vittima</li>
+                            <li><strong>Man-in-the-Middle</strong>: Intercettare il traffico non cifrato (HTTP invece di
+                                HTTPS)</li>
+                            <li><strong>Social Engineering</strong>: Ingannare la vittima a rivelare il token</li>
+                        </ol>
+                        <p>
+                            <strong>Conclusione:</strong> Con implementazione corretta e HTTPS, i token
+                            anti-CSRF forniscono protezione robusta contro gli attacchi CSRF.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mitigation Strategies -->
+        <section class="mitigation-box">
+            <h2>🛡️ Strategie di Mitigazione</h2>
+
+            <div class="card">
+                <h3>1. Token Anti-CSRF (Raccomandato)</h3>
+                <ul>
+                    <li><strong>Synchronizer Token Pattern</strong>: Token univoco per sessione/richiesta</li>
+                    <li><strong>Double Submit Cookie</strong>: Inviare il token sia nel cookie che nel form</li>
+                    <li><strong>Encrypted Token Pattern</strong>: Token crittografati con chiave server</li>
+                    <li><strong>Per-Request Tokens</strong>: Generare nuovo token ad ogni richiesta (più sicuro ma più
+                        complesso)</li>
+                </ul>
+
+                <h4>Implementazione Best Practices:</h4>
+                <pre><code>// Generazione token sicuro (PHP)
+$token = bin2hex(random_bytes(32));
+$_SESSION['csrf_token'] = $token;
+
+// Validazione
+if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    die('CSRF token validation failed');
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>2. Attributo SameSite per Cookie</h3>
+                <ul>
+                    <li><strong>SameSite=Strict</strong>: Cookie inviato solo per richieste same-site</li>
+                    <li><strong>SameSite=Lax</strong>: Cookie inviato per navigazione top-level</li>
+                    <li><strong>SameSite=None</strong>: Cookie inviato sempre (richiede Secure flag)</li>
+                </ul>
+
+                <pre><code>Set-Cookie: SESSIONID=abc123; SameSite=Strict; Secure; HttpOnly</code></pre>
+
+                <p>
+                    <strong>Nota:</strong> SameSite=Strict blocca l'invio dei cookie per richieste
+                    cross-site, prevenendo molti attacchi CSRF automaticamente.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>3. Verifica Header Origin e Referer</h3>
+                <ul>
+                    <li><strong>Origin header</strong>: Più affidabile del Referer, verifica l'origine della richiesta
+                    </li>
+                    <li><strong>Strict validation</strong>: Controllare che Origin/Referer inizi con il dominio corretto
+                    </li>
+                    <li><strong>Fallback</strong>: Usare come difesa aggiuntiva, non primaria</li>
+                </ul>
+
+                <pre><code>// Validazione Origin header
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$allowedOrigin = 'https://myapp.com';
+if (strpos($origin, $allowedOrigin) !== 0) {
+    die('Invalid origin');
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>4. Usare Metodi HTTP Appropriati</h3>
+                <ul>
+                    <li><strong>GET</strong>: Solo per lettura, mai per azioni che modificano stato</li>
+                    <li><strong>POST/PUT/DELETE</strong>: Per azioni che cambiano dati</li>
+                    <li><strong>Idempotenza</strong>: Progettare API per essere sicure anche con rigiochi</li>
+                </ul>
+
+                <p>
+                    <strong>Regola:</strong> Se l'azione cambia stato (crea, modifica, elimina),
+                    DEVE usare POST/PUT/DELETE, MAI GET.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>5. Re-autenticazione per Azioni Sensibili</h3>
+                <ul>
+                    <li>Richiedere la password corrente per cambio password</li>
+                    <li>Richiedere conferma via email per azioni critiche</li>
+                    <li>Implementare step-up authentication per operazioni ad alto rischio</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>6. Framework e Librerie</h3>
+                <ul>
+                    <li><strong>Usare framework moderni</strong>: Laravel, Django, Rails hanno protezione CSRF integrata
+                    </li>
+                    <li><strong>Middleware CSRF</strong>: Abilitare middleware anti-CSRF del framework</li>
+                    <li><strong>Non reinventare la ruota</strong>: Usare implementazioni testate e sicure</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>7. Content Security Policy (CSP)</h3>
+                <ul>
+                    <li>Limitare domani da cui possono essere caricati script</li>
+                    <li>Prevenire inline script che potrebbero facilitare CSRF</li>
+                    <li>Usare nonce o hash per script legittimi</li>
+                </ul>
+
+                <pre><code>Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-random123'</code></pre>
+            </div>
+        </section>
+
+        <!-- Summary -->
+        <section class="section">
+            <div class="alert alert-success">
+                <h3>📌 Riepilogo</h3>
+                <p>
+                    Il CSRF sfrutta la fiducia che un'applicazione web ha nei browser autenticati
+                    per eseguire azioni non autorizzate. La difesa più efficace è l'uso di token
+                    anti-CSRF combinato con cookie SameSite, validazione Origin/Referer, e uso
+                    corretto dei metodi HTTP.
+                </p>
+                <p>
+                    <strong>Chiave di volta:</strong> Mai fidarsi ciecamente delle richieste
+                    autenticate. Implementare token imprevedibili per validare l'intento dell'utente.
+                </p>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav-container">
+        <button class="nav-btn" id="nav-home" onclick="window.location.href='index.html'">🏠 Home</button>
+        <button class="nav-btn" id="nav-prev" onclick="window.location.href='02_command_injection.html'">←
+            Precedente</button>
+        <span class="nav-info" id="progress">4 / 8</span>
+        <button class="nav-btn" id="nav-next" onclick="window.location.href='04_file_inclusion.html'">Successivo
+            →</button>
+    </div>
+
+    <script src="navigation.js"></script>
+</body>
+
+</html>

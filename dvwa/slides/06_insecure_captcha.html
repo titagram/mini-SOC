@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>06 - Insecure CAPTCHA | DVWA Cybersecurity Course</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="slide-container">
+
+        <section class="section">
+            <h1>🤖 Insecure CAPTCHA</h1>
+            <p class="hero-subtitle">
+                Bypassare implementazioni insicure dei sistemi CAPTCHA
+            </p>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">📖 Cos'è un CAPTCHA?</h2>
+
+            <div class="card">
+                <h3>Definizione</h3>
+                <p>
+                    <strong>CAPTCHA</strong> (Completely Automated Public Turing test to tell Computers
+                    and Humans Apart) è un sistema di challenge-response usato per determinare se l'utente
+                    è umano o un bot automatizzato.
+                </p>
+                <p>
+                    Lo scopo è prevenire:
+                </p>
+                <ul>
+                    <li>🤖 <strong>Bot automatizzati</strong></li>
+                    <li>📧 <strong>Spam</strong></li>
+                    <li>🔓 <strong>Attacchi brute force</strong></li>
+                    <li>🎟️ <strong>Ticket scalping e scraping</strong></li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>CAPTCHA Sicuro vs Insicuro</h3>
+                <div class="attack-flow">
+                    <div class="attack-step">
+                        <h4>✅ CAPTCHA Sicuro</h4>
+                        <p>Validazione server-side<br>Token crittografati<br>Challenge imprevedibili</p>
+                    </div>
+                    <div class="attack-step">
+                        <h4>❌ CAPTCHA Insicuro</h4>
+                        <p>Validazione client-side<br>Parametri predicibili<br>Logica bypassabile</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-low">Low Security</span> Vulnerabilità e Sfruttamento</h3>
+
+            <div class="alert alert-danger">
+                <strong>⚠️ Vulnerabilità:</strong> Il processo di validazione è suddiviso in 2 step.
+                Un attaccante può bypassare lo Step 1 (CAPTCHA) modificando direttamente il parametro step.
+            </div>
+
+            <div class="card">
+                <h4>Logica Vulnerabile:</h4>
+                <p>Step 1: Verifica input e CAPTCHA</p>
+                <p>Step 2: Se Step 1 ha successo, mostra pulsante "Submit" per completare</p>
+
+                <p>Il problema: non c'è una reale connessione tra i due step sul server!</p>
+            </div>
+
+            <h4>🎯 Bypass: Manipolazione Parametro Step</h4>
+            <div class="card">
+                <h4>Procedura con Burp Suite:</h4>
+                <ol>
+                    <li>Configurare Burp Suite per intercettare il traffico</li>
+                    <li>Tentare un cambio password (verrà mostrato il CAPTCHA)</li>
+                    <li>Intercettare la richiesta HTTP</li>
+                    <li>Modificare il parametro <code>step</code> da <code>1</code> a <code>2</code>:
+                        <pre><code>step=2&password_new=hacked&password_conf=hacked</code></pre>
+                    </li>
+                    <li>Inoltrare la richiesta modificata</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Perché Funziona:</h4>
+                        <p>
+                            Il server si aspetta che step=2 venga inviato SOLO dopo aver completato
+                            step=1 (con CAPTCHA risolto). Tuttavia, non c'è verifica server-side che
+                            lo step 1 sia effettivamente stato completato!
+                        </p>
+                        <p>
+                            Saltando direttamente a step=2, bypassiamo completamente il CAPTCHA.
+                        </p>
+                        <p>
+                            <strong>Lezione:</strong> La validazione multi-step deve essere gestita
+                            correttamente sul server con session state.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-medium">Medium Security</span> Protezioni Implementate</h3>
+
+            <div class="alert alert-warning">
+                <strong>🛡️ Nuova Difesa:</strong> Il sistema verifica un parametro
+                <code>passed_captcha</code> per determinare se il CAPTCHA è stato superato.
+            </div>
+
+            <div class="card">
+                <h4>Logica di Validazione (Concettuale):</h4>
+                <pre><code>if ($_POST['step'] == 2) {
+    if ($_POST['passed_captcha'] == 'true') {
+        // Cambia password
+    } else {
+        die('CAPTCHA verification failed');
+    }
+}</code></pre>
+            </div>
+
+            <h4>🎯 Bypass: Manipolazione Parametro passed_captcha</h4>
+            <div class="card">
+                <p>
+                    Il parametro <code>passed_captcha</code> è controllato sul lato client e può
+                    essere facilmente manipolato.
+                </p>
+
+                <h4>Procedura con Burp Suite:</h4>
+                <ol>
+                    <li>Intercettare la richiesta di cambio password</li>
+                    <li>Modificare i parametri:
+                        <pre><code>step=2&passed_captcha=true&password_new=hacked&password_conf=hacked</code></pre>
+                    </li>
+                    <li>Inoltrare la richiesta</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Problema Fondamentale:</h4>
+                        <p>
+                            Il server si fida del parametro <code>passed_captcha</code> inviato dal
+                            client. Un attaccante può semplicemente impostarlo a <code>true</code>
+                            senza mai risolvere il CAPTCHA!
+                        </p>
+                        <p>
+                            <strong>Lezione:</strong> Mai fidarsi dei dati provenienti dal client.
+                            La validazione DEVE avvenire completamente sul server.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-high">High Security</span> Protezioni Avanzate</h3>
+
+            <div class="alert alert-info">
+                <strong>🛡️ Difese Implementate:</strong> Validazione a più strati con fallback
+                che richiede header User-Agent specifico e valore nascosto.
+            </div>
+
+            <div class="card">
+                <h4>Logica di Validazione (Concettuale):</h4>
+                <pre><code>// Prima verifica reCAPTCHA reale
+if (!verifica_recaptcha($_POST['g-recaptcha-response'])) {
+    // Fallback: controlla valore nascosto
+    if ($_POST['g-recaptcha-response'] != 'hidd3n_valu3' || 
+        $_SERVER['HTTP_USER_AGENT'] != 'reCAPTCHA') {
+        die('CAPTCHA failed');
+    }
+}
+// Procedi con cambio password</code></pre>
+            </div>
+
+            <h4>🎯 Bypass: Header Manipulation</h4>
+            <div class="card">
+                <h4>Procedura con Burp Suite:</h4>
+                <ol>
+                    <li>Intercettare la richiesta POST</li>
+                    <li>Modificare i parametri e gli header:
+                        <pre><code>POST /vulnerabilities/captcha/ HTTP/1.1
+...
+User-Agent: reCAPTCHA
+
+step=2&g-recaptcha-response=hidd3n_valu3&password_new=hacked&password_conf=hacked</code></pre>
+                    </li>
+                    <li>Inoltrare la richiesta modificata</li>
+                </ol>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Analisi della Vulnerabilità:</h4>
+                        <p>
+                            Il codice ha una logica di fallback che accetta valori hardcoded
+                            (<code>hidd3n_valu3</code> e User-Agent <code>reCAPTCHA</code>).
+                            Questo è probabilmente codice di debug lasciato per sbaglio in produzione!
+                        </p>
+                        <p>
+                            Un attaccante che analizza il codice sorgente (o fa reverse engineering)
+                            può scoprire questi valori magici e bypassare completamente il CAPTCHA.
+                        </p>
+                        <p>
+                            <strong>Lezioni:</strong>
+                        <ul>
+                            <li>Mai lasciare backdoor o codice di debug in produzione</li>
+                            <li>Non hardcodare valori segreti nel codice client-visible</li>
+                            <li>Usare configurazione separata per dev/prod</li>
+                        </ul>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="level-section">
+            <h3><span class="badge badge-impossible">Impossible</span> Implementazione Sicura</h3>
+
+            <div class="alert alert-success">
+                <strong>✅ Difese Implementate:</strong>
+                <ul>
+                    <li><code>stripslashes()</code> per pulizia input</li>
+                    <li><strong>Token Anti-CSRF</strong> generato per ogni richiesta</li>
+                    <li><strong>Prepared statements</strong> per query SQL</li>
+                    <li>Processo semplificato in un unico step</li>
+                    <li>Validazione server-side completa</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h4>Approccio Sicuro (Concettuale):</h4>
+                <pre><code>// Verifica token anti-CSRF
+if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    die('CSRF token invalid');
+}
+
+// Verifica reCAPTCHA con Google API
+$recaptcha_response = $_POST['g-recaptcha-response'];
+$recaptcha_secret = 'YOUR_SECRET_KEY';
+$response = file_get_contents(
+    "https://www.google.com/recaptcha/api/siteverify?secret=" . 
+    $recaptcha_secret . "&response=" . $recaptcha_response
+);
+$response_data = json_decode($response);
+
+if (!$response_data->success) {
+    die('reCAPTCHA verification failed');
+}
+
+// Solo ora procedi con il cambio password
+// usando prepared statements
+$stmt = $pdo->prepare("UPDATE users SET password = ? WHERE username = ?");
+$stmt->execute([hash_password($new_password), $username]);</code></pre>
+
+                <div class="spoiler">
+                    <div class="spoiler-content">
+                        <h4>💡 Perché è Sicuro:</h4>
+                        <ul>
+                            <li>✅ <strong>Validazione reCAPTCHA reale</strong>: Chiamata API a Google per verificare il
+                                token</li>
+                            <li>✅ <strong>Token Anti-CSRF</strong>: Previene replay attacks</li>
+                            <li>✅ <strong>Unico step</strong>: Elimina problemi di state management multi-step</li>
+                            <li>✅ <strong>Server-side only</strong>: Nessuna decisione basata su input client</li>
+                            <li>✅ <strong>Prepared statements</strong>: Previene SQL injection</li>
+                        </ul>
+
+                        <p>
+                            <strong>Risultato:</strong> Non ci sono bypass noti. Il sistema richiede
+                            genuina interazione umana e validazione crittografica robusta.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mitigation-box">
+            <h2>🛡️ Strategie di Mitigazione</h2>
+
+            <div class="card">
+                <h3>1. Usare reCAPTCHA di Google (v2/v3)</h3>
+                <ul>
+                    <li><strong>reCAPTCHA v2</strong>: Checkbox "I'm not a robot" con challenge visivi</li>
+                    <li><strong>reCAPTCHA v3</strong>: Score-based, invisibile all'utente</li>
+                    <li><strong>Validazione server-side</strong>: Sempre verificare con API Google</li>
+                    <li><strong>Secret key sicura</strong>: Mai esporre la chiave segreta al client</li>
+                </ul>
+
+                <h4>Implementazione Corretta (PHP):</h4>
+                <pre><code>$recaptcha_secret = getenv('RECAPTCHA_SECRET_KEY');
+$response = $_POST['g-recaptcha-response'];
+
+$verify = file_get_contents(
+    'https://www.google.com/recaptcha/api/siteverify?' . 
+    http_build_query([
+        'secret' => $recaptcha_secret,
+        'response' => $response,
+        'remoteip' => $_SERVER['REMOTE_ADDR']
+    ])
+);
+
+$captcha_success = json_decode($verify);
+if ($captcha_success->success && $captcha_success->score > 0.5) {
+    // Procedi
+} else {
+    // Blocca
+}</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>2. Validazione Server-Side Completa</h3>
+                <ul>
+                    <li>Mai fidarsi di parametri client-side (<code>passed_captcha</code>, etc.)</li>
+                    <li>Sempre validare con API del provider CAPTCHA</li>
+                    <li>Verificare timeout del token CAPTCHA</li>
+                    <li>Token monouso (non permettere riuso)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>3. Session State Management</h3>
+                <ul>
+                    <li>Memorizzare stato CAPTCHA nella sessione server</li>
+                    <li>Verificare che il CAPTCHA sia stato completato prima di procedere</li>
+                    <li>Invalidare token dopo l'uso</li>
+                    <li>Timeout sessione appropriato</li>
+                </ul>
+
+                <pre><code>// Dopo verifica CAPTCHA successo
+$_SESSION['captcha_verified'] = true;
+$_SESSION['captcha_timestamp'] = time();
+
+// Prima di eseguire azione protetta
+if (!isset($_SESSION['captcha_verified']) || 
+    time() - $_SESSION['captcha_timestamp'] > 300) {
+    die('CAPTCHA expired or not verified');
+}
+
+// Invalida dopo uso
+unset($_SESSION['captcha_verified']);</code></pre>
+            </div>
+
+            <div class="card">
+                <h3>4. Alternative a CAPTCHA Tradizionale</h3>
+                <ul>
+                    <li><strong>hCaptcha</strong>: Alternative open-source a reCAPTCHA</li>
+                    <li><strong>Cloudflare Turnstile</strong>: CAPTCHA invisible privacy-focused</li>
+                    <li><strong>Honeypot fields</strong>: Campi nascosti che i bot compilano</li>
+                    <li><strong>Rate limiting</strong>: Limitare tentativi per IP/sessione</li>
+                    <li><strong>Behavioral analysis</strong>: Analisi del comportamento utente (mouse movement,
+                        keystroke dynamics)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>5. Defense in Depth</h3>
+                <ul>
+                    <li>CAPTCHA + Rate limiting + Account lockout</li>
+                    <li>CAPTCHA + Anti-CSRF tokens</li>
+                    <li>Progressive challenges (CAPTCHA dopo N tentativi falliti)</li>
+                    <li>Risk-based challenge (CAPTCHA per IP/comportamenti sospetti)</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>6. Monitoring e Logging</h3>
+                <ul>
+                    <li>Loggare tutti i tentativi CAPTCHA (successi e fallimenti)</li>
+                    <li>Alert su pattern sospetti (troppi fallimenti, bypass attempts)</li>
+                    <li>Analisi statistica per rilevare bot</li>
+                    <li>Blacklisting IP con comportamento malevolo</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>7. Best Practices Implementazione</h3>
+                <ul>
+                    <li>❌ Non usare CAPTCHA hardcoded o predicibili</li>
+                    <li>❌ Non fare validazione solo client-side</li>
+                    <li>❌ Non lasciare backdoor di debug in produzione</li>
+                    <li>✅ Usare librerie ufficiali (reCAPTCHA, hCaptcha)</li>
+                    <li>✅ Sempre validare server-side con API del provider</li>
+                    <li>✅ Combinare con altre tecniche di sicurezza</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="alert alert-success">
+                <h3>📌 Riepilogo</h3>
+                <p>
+                    I CAPTCHA insicuri possono essere bypassati tramite manipolazione parametri,
+                    header spoofing, o sfruttamento di logica debole. La difesa richiede validazione
+                    server-side con API del provider CAPTCHA, session state management corretto,
+                    e combinazione con altre tecniche anti-bot.
+                </p>
+                <p>
+                    <strong>Regola d'oro:</strong> Mai fidarsi del client. Validare sempre lato server.
+                </p>
+            </div>
+        </section>
+
+    </div>
+
+    <div class="nav-container">
+        <button class="nav-btn" id="nav-home" onclick="window.location.href='index.html'">🏠 Home</button>
+        <button class="nav-btn" id="nav-prev" onclick="window.location.href='05_file_upload.html'">← Precedente</button>
+        <span class="nav-info" id="progress">7 / 8</span>
+        <button class="nav-btn" id="nav-next" onclick="window.location.href='07_sql_injection.html'">Successivo
+            →</button>
+    </div>
+
+    <script src="navigation.js"></script>
+</body>
+
+</html>
